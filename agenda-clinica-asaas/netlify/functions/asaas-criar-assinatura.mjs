@@ -1,7 +1,8 @@
 import { asaasFetch, findOrCreateCustomer, jsonResponse } from "./_asaas.mjs";
 
 /**
- * Cria uma assinatura recorrente (plano mensal da clínica) no Asaas.
+ * Cria uma assinatura recorrente (plano da clínica) no Asaas com prazo de vencimento
+ * (nextDueDate para a 1ª cobrança e endDate opcional para o fim/validade do plano).
  */
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") {
@@ -23,6 +24,7 @@ export async function handler(event) {
       billingType = "UNDEFINED",
       description = "Plano Mensal da Clínica",
       nextDueDate,
+      endDate,
     } = body;
 
     if (!value || Number(value) <= 0) {
@@ -30,18 +32,24 @@ export async function handler(event) {
     }
 
     const customer = await findOrCreateCustomer({ name, cpfCnpj, phone, email });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const subPayload = {
+      customer: customer.id,
+      billingType,
+      value: Number(value),
+      nextDueDate: nextDueDate || today,
+      cycle,
+      description,
+    };
+
+    if (endDate) {
+      subPayload.endDate = endDate;
+    }
 
     const subscription = await asaasFetch("/subscriptions", {
       method: "POST",
-      body: JSON.stringify({
-        customer: customer.id,
-        billingType,
-        value: Number(value),
-        nextDueDate: nextDueDate || today,
-        cycle,
-        description,
-      }),
+      body: JSON.stringify(subPayload),
     });
 
     // Busca a primeira cobrança gerada pela assinatura para disponibilizar o link imediato
@@ -62,12 +70,14 @@ export async function handler(event) {
         value: subscription.value,
         cycle: subscription.cycle,
         nextDueDate: subscription.nextDueDate,
+        endDate: subscription.endDate || null,
         description: subscription.description,
       },
       firstPayment: firstPayment
         ? {
             id: firstPayment.id,
             status: firstPayment.status,
+            dueDate: firstPayment.dueDate,
             invoiceUrl: firstPayment.invoiceUrl,
           }
         : null,

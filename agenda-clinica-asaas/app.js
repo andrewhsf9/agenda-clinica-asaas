@@ -448,7 +448,7 @@
         <div style="margin-top:0.6rem; display:flex; flex-wrap:wrap; gap:0.4rem;">
           ${
             result.linkRegularizacao
-              ? `<a href="${result.linkRegularizacao}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">🔗 Ver Fatura Vencida</a>`
+              ? `<a href="${result.linkRegularizacao}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">🔗 Abrir Fatura para Pagar / Regularizar</a>`
               : ""
           }
           <button type="button" id="btn-switch-particular" class="btn btn-primary btn-sm">💳 Mudar para Particular</button>
@@ -709,6 +709,8 @@
     // Nova Assinatura
     $("btn-new-subscription").onclick = () => {
       $("form-subscription").reset();
+      $("sub-due-date").value = getTodayIso();
+      $("sub-end-date").value = "";
       $("sub-result").classList.add("hidden");
       openModal("modal-subscription");
     };
@@ -720,6 +722,8 @@
     $("form-subscription").onsubmit = async (e) => {
       e.preventDefault();
       const plan = CFG.planos.find((p) => p.id === $("sub-plan").value);
+      const nextDueDate = $("sub-due-date").value || getTodayIso();
+      const endDate = $("sub-end-date").value || undefined;
       const box = $("sub-result");
       box.classList.remove("hidden", "check-ok", "check-error");
       box.textContent = "⏳ Criando assinatura no Asaas...";
@@ -732,14 +736,18 @@
         cycle: plan.ciclo,
         billingType: $("sub-billing").value,
         description: plan.nome,
+        nextDueDate,
+        endDate,
       });
 
       if (res.ok) {
         box.classList.add("check-ok");
         const link = res.firstPayment?.invoiceUrl;
-        box.innerHTML = `✅ Assinatura <strong>${plan.nome}</strong> criada! ${
-          link ? `<br><a href="${link}" target="_blank" rel="noopener">🔗 Abrir link da 1ª mensalidade</a>` : ""
-        }`;
+        box.innerHTML = `✅ Assinatura <strong>${plan.nome}</strong> criada!<br>
+          📅 <strong>1º Vencimento:</strong> ${formatDateBr(res.subscription?.nextDueDate || nextDueDate)}
+          ${endDate ? ` • <strong>Validade até:</strong> ${formatDateBr(endDate)}` : ""}<br>
+          <small>⚠️ O plano só constará como "Em Dia" após a confirmação do pagamento da fatura no Asaas.</small>
+          ${link ? `<br><a href="${link}" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">🔗 Abrir Fatura da 1ª Mensalidade</a>` : ""}`;
       } else {
         box.classList.add("check-error");
         box.textContent = `❌ ${res.error || "Erro ao criar assinatura."}`;
