@@ -30,6 +30,32 @@
     return String(v || "").replace(/\D/g, "");
   }
 
+  function isValidCpf(value) {
+    const cpf = sanitizeDoc(value);
+    if (cpf.length !== 11) return false;
+    // No modo Demo local permite os 3 CPFs de teste
+    if (!isLiveMode() && ["11111111111", "22222222222", "33333333333", "44444444444"].includes(cpf)) {
+      return true;
+    }
+    if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+    let sum = 0;
+    for (let i = 0; i < 9; i++) {
+      sum += Number(cpf.charAt(i)) * (10 - i);
+    }
+    let rev = 11 - (sum % 11);
+    if (rev === 10 || rev === 11) rev = 0;
+    if (rev !== Number(cpf.charAt(9))) return false;
+
+    sum = 0;
+    for (let i = 0; i < 10; i++) {
+      sum += Number(cpf.charAt(i)) * (11 - i);
+    }
+    rev = 11 - (sum % 11);
+    if (rev === 10 || rev === 11) rev = 0;
+    return rev === Number(cpf.charAt(10));
+  }
+
   function formatCpf(v) {
     const d = sanitizeDoc(v).slice(0, 14);
     if (d.length <= 11) {
@@ -43,6 +69,30 @@
       .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
       .replace(/\.(\d{3})(\d)/, ".$1/$2")
       .replace(/(\d{4})(\d)/, "$1-$2");
+  }
+
+  function formatCep(v) {
+    const d = sanitizeDoc(v).slice(0, 8);
+    return d.replace(/^(\d{5})(\d)/, "$1-$2");
+  }
+
+  function generateMatriculaLocal() {
+    const year = new Date().getFullYear();
+    const seq = String((contratos?.length || 0) + 1).padStart(4, "0");
+    const rand = String(Math.floor(10 + Math.random() * 90));
+    return `MAT-${year}-${seq}${rand}`;
+  }
+
+  function formatEnderecoResumo(end) {
+    if (!end || (!end.logradouro && !end.cep)) return "";
+    const partes = [
+      end.logradouro ? `${end.logradouro}${end.numero ? `, ${end.numero}` : ""}` : "",
+      end.complemento || "",
+      end.bairro || "",
+      end.cidade ? `${end.cidade}${end.uf ? `/${end.uf}` : ""}` : "",
+      end.cep ? `CEP ${formatCep(end.cep)}` : "",
+    ].filter(Boolean);
+    return partes.join(" • ");
   }
 
   function maskCpf(v) {
@@ -182,8 +232,10 @@
 
   // --- Camada de API ---
 
-  async function apiVerificarPlano(cpf, procedimento = "CONSULTA", masterOverride = false) {
-    const clean = sanitizeDoc(cpf);
+  async function apiVerificarPlano(cpfOrMat, procedimento = "CONSULTA", masterOverride = false) {
+    const raw = String(cpfOrMat || "").trim().toUpperCase();
+    const isMat = raw.startsWith("MAT");
+    const clean = sanitizeDoc(cpfOrMat);
 
     if (!isLiveMode()) {
       let targetClean = clean;
@@ -193,8 +245,9 @@
 
       for (const c of contratos) {
         if (c.status === "CANCELED") continue;
-        if (sanitizeDoc(c.titularCpf) === clean) {
+        if ((isMat && String(c.matricula || "").toUpperCase() === raw) || (!isMat && sanitizeDoc(c.titularCpf) === clean)) {
           contratoLocal = c;
+          targetClean = sanitizeDoc(c.titularCpf);
           dataAdesaoPessoa = c.createdAt;
           break;
         }
@@ -213,7 +266,7 @@
         return {
           autorizado: false,
           statusPlano: "NAO_ENCONTRADO",
-          motivo: "Paciente não encontrado no Asaas. Não possui plano ativo — agende como Particular ou faça a adesão ao plano.",
+          motivo: "Paciente/Matrícula não encontrado no Asaas. Não possui plano ativo — agende como Particular ou faça a adesão ao plano.",
         };
       }
       if (cli.situacao === "INADIMPLENTE") {
@@ -225,7 +278,7 @@
           customer: {
             id: cli.id,
             name: depLocal ? `${depLocal.nome} (Dep. de ${depLocal.titularNome})` : cli.name,
-            cpfCnpj: clean,
+            cpfCnpj: targetClean,
           },
           faturasVencidas: cli.faturasVencidas,
           linkRegularizacao: fat.invoiceUrl,
@@ -235,12 +288,14 @@
         return {
           autorizado: false,
           statusPlano: "SEM_PLANO_ATIVO",
-          motivo: "Agendamento pelo plano recusado: nenhuma assinatura de plano ativa encontrada para este CPF.",
-          customer: { id: cli.id, name: cli.name, cpfCnpj: clean },
+          motivo: "Agendamento pelo plano recusado: nenhuma assinatura de plano ativa encontrada para este CPF/Matrícula.",
+          customer: { id: cli.id, name: cli.name, cpfCnpj: targetClean },
         };
       }
 
-      const totalVidas = contratoLocal ? 1 + (contratoLocal.dependentes?.length || 0) : 2;
+      const totalVidas = contratoLocal
+        ? Math.max(Number(contratoLocal.vidasContratadas || 1), 1 + (contratoLocal.dependentes?.length || 0))
+        : 2;
       const carencia = evaluateCarenciaLocal({
         procedimento,
         dataAdesao: dataAdesaoPessoa,
@@ -258,7 +313,7 @@
           customer: {
             id: cli.id,
             name: depLocal ? `${depLocal.nome} (Dep. de ${depLocal.titularNome})` : cli.name,
-            cpfCnpj: clean,
+            cpfCnpj: targetClean,
           },
         };
       }
@@ -267,17 +322,18 @@
         autorizado: true,
         statusPlano: "EM_DIA",
         carencia,
-        motivo: `Plano em dia e carência cumprida para ${carencia.nomeProcedimento}! (${totalVidas} vida(s) • Próx. vencimento: ${formatDateBr(cli.plano.nextDueDate)})${masterOverride && carencia.emCarencia ? " [Carência liberada com Acesso Master]" : ""}`,
+        motivo: `Plano em dia e carência cumprida para ${carencia.nomeProcedimento}! (${contratoLocal?.matricula ? `Matrícula ${contratoLocal.matricula} • ` : ""}${totalVidas} vida(s) • Próx. vencimento: ${formatDateBr(cli.plano.nextDueDate)})${masterOverride && carencia.emCarencia ? " [Carência liberada com Acesso Master]" : ""}`,
         customer: {
           id: cli.id,
           name: depLocal ? `${depLocal.nome} (Dep. de ${depLocal.titularNome})` : cli.name,
-          cpfCnpj: clean,
+          cpfCnpj: targetClean,
         },
         plano: cli.plano,
       };
     }
 
-    const url = `/.netlify/functions/asaas-verificar-plano?cpf=${encodeURIComponent(clean)}&procedimento=${encodeURIComponent(procedimento)}&masterOverride=${masterOverride ? "true" : "false"}`;
+    const queryParam = isMat ? raw : clean;
+    const url = `/.netlify/functions/asaas-verificar-plano?cpf=${encodeURIComponent(queryParam)}&procedimento=${encodeURIComponent(procedimento)}&masterOverride=${masterOverride ? "true" : "false"}`;
     const res = await fetch(url);
     return res.json();
   }
@@ -357,16 +413,21 @@
       const valorPrimeira = Number((valorMensal + Number(payload.taxaAdesao || 10)).toFixed(2));
       const adesaoIso = payload.dataAdesao || today;
       const proximoReajusteEm = addYearsIso(adesaoIso, 1);
+      const matricula = payload.matricula || generateMatriculaLocal();
 
       const contrato = {
         id: subId,
+        matricula,
         subscriptionId: subId,
         customerId: "cus_demo_" + clean.slice(0, 4),
         titularNome: payload.name,
         titularCpf: clean,
+        titularDataNascimento: payload.dataNascimento || null,
         titularPhone: sanitizeDoc(payload.phone),
+        titularEndereco: payload.endereco || null,
         planId: payload.planId,
         planCategory: payload.planCategory,
+        vidasContratadas: Math.max(Number(payload.vidasContratadas || 1), 1 + (payload.dependentes?.length || 0)),
         planName: payload.description,
         valorMensal,
         taxaAdesaoInicial: Number(payload.taxaAdesao || 10),
@@ -385,6 +446,7 @@
           id: `dep-${Date.now()}-${i}`,
           nome: d.nome,
           cpf: sanitizeDoc(d.cpf),
+          dataNascimento: d.dataNascimento || null,
           parentesco: d.parentesco || "Dependente",
           dataInclusao: adesaoIso,
           tipoInclusao: "ADESAO_INICIAL",
@@ -393,7 +455,7 @@
           {
             data: today,
             tipo: "ADESAO",
-            descricao: `Plano criado com adesão em ${formatDateBr(adesaoIso)} (${1 + (payload.dependentes?.length || 0)} vida(s) • ${formatMoney(valorMensal)}/mês + R$ 10,00 tx adesão). Próximo reajuste anual (+5%) em ${formatDateBr(proximoReajusteEm)}.`,
+            descricao: `Plano criado [${matricula}] com adesão em ${formatDateBr(adesaoIso)} (${Math.max(Number(payload.vidasContratadas || 1), 1 + (payload.dependentes?.length || 0))} vida(s) • ${formatMoney(valorMensal)}/mês + R$ 10,00 tx adesão). Próximo reajuste anual (+5%) em ${formatDateBr(proximoReajusteEm)}.`,
           },
         ],
       };
@@ -511,6 +573,7 @@
           id: `dep-${Date.now()}-${i}`,
           nome: d.nome,
           cpf: sanitizeDoc(d.cpf),
+          dataNascimento: d.dataNascimento || null,
           parentesco: d.parentesco || "Dependente",
           dataInclusao: today,
           tipoInclusao: "POSTERIOR",
@@ -684,13 +747,25 @@
     return [
       {
         id: "sub_demo_001",
+        matricula: "MAT-2026-0001",
         subscriptionId: "sub_demo_001",
         customerId: "cus_demo_001",
         titularNome: "Maria Aparecida Silva",
         titularCpf: "11111111111",
+        titularDataNascimento: "1985-04-12",
         titularPhone: "11999991111",
+        titularEndereco: {
+          cep: "01001000",
+          logradouro: "Praça da Sé",
+          numero: "100",
+          complemento: "Apto 12",
+          bairro: "Sé",
+          cidade: "São Paulo",
+          uf: "SP",
+        },
         planId: "plano-2",
         planCategory: "TABELA",
+        vidasContratadas: 2,
         planName: "Plano 2 Pessoas (Titular + 1 dependente)",
         valorMensal: 170.0,
         taxaAdesaoInicial: 10.0,
@@ -710,6 +785,7 @@
             id: "dep-demo-1",
             nome: "Lucas Silva",
             cpf: "44444444444",
+            dataNascimento: "2012-08-20",
             parentesco: "Filho(a)",
             dataInclusao: adesaoAntiga,
             tipoInclusao: "ADESAO_INICIAL",
@@ -719,7 +795,7 @@
           {
             data: adesaoAntiga,
             tipo: "ADESAO",
-            descricao: `Plano criado em ${formatDateBr(adesaoAntiga)} (2 vidas • R$ 170,00/mês + R$ 10,00 tx adesão).`,
+            descricao: `Plano criado [MAT-2026-0001] em ${formatDateBr(adesaoAntiga)} (2 vidas • R$ 170,00/mês + R$ 10,00 tx adesão).`,
           },
         ],
       },
@@ -898,12 +974,19 @@
 
     const filtered = contratos.filter((c) => {
       if (!q) return true;
+      const qDigits = sanitizeDoc(q);
+      const matchMat = (c.matricula || "").toLowerCase().includes(q);
       const matchTitular =
-        (c.titularNome || "").toLowerCase().includes(q) || (c.titularCpf || "").includes(q);
+        (c.titularNome || "").toLowerCase().includes(q) ||
+        (c.titularCpf || "").includes(q) ||
+        (qDigits && (c.titularCpf || "").includes(qDigits));
       const matchDep = (c.dependentes || []).some(
-        (d) => (d.nome || "").toLowerCase().includes(q) || (d.cpf || "").includes(q)
+        (d) =>
+          (d.nome || "").toLowerCase().includes(q) ||
+          (d.cpf || "").includes(q) ||
+          (qDigits && (d.cpf || "").includes(qDigits))
       );
-      return matchTitular || matchDep;
+      return matchMat || matchTitular || matchDep;
     });
 
     if (filtered.length === 0) {
@@ -914,7 +997,7 @@
     listEl.innerHTML = filtered
       .map((c) => {
         const deps = c.dependentes || [];
-        const totalVidas = 1 + deps.length;
+        const totalVidas = Math.max(Number(c.vidasContratadas || 1), 1 + deps.length);
         const isCanceled = c.status === "CANCELED";
         const linkBoleto = c.firstPaymentUrl || c.firstPaymentInvoiceUrl || "";
         const whatsUrl = buildBoletoWhatsAppUrl({
@@ -973,7 +1056,7 @@
                   <div class="dep-item">
                     <div>
                       <strong>👤 ${d.nome}</strong>
-                      <span class="muted"> • CPF: ${formatCpf(d.cpf) || "Não inf."} • ${d.parentesco || "Dependente"} • Entrada: ${formatDateBr(d.dataInclusao || c.createdAt)}</span>
+                      <span class="muted"> • CPF: ${formatCpf(d.cpf) || "Não inf."}${d.dataNascimento ? ` • Nasc: ${formatDateBr(d.dataNascimento)}` : ""} • ${d.parentesco || "Dependente"} • Entrada: ${formatDateBr(d.dataInclusao || c.createdAt)}</span>
                       <span class="badge badge-teal" style="margin-left:0.3rem;">
                         ${d.tipoInclusao === "POSTERIOR" ? "Incluído depois (+R$ 60)" : "Adesão inicial"}
                       </span>
@@ -1010,13 +1093,20 @@
                 <span class="badge ${isCanceled ? "badge-red" : "badge-green"}">
                   ${isCanceled ? "🚫 Contrato Cancelado (Em Quarentena 6m)" : "🪪 Contrato Ativo"}
                 </span>
+                ${c.matricula ? `<span class="badge badge-teal" title="Matrícula do Contrato">🏷️ ${c.matricula}</span>` : ""}
                 <span class="badge badge-teal">${c.planName}</span>
                 <span class="badge badge-amber">💰 Mensalidade Asaas: ${formatMoney(c.valorMensal)}/mês</span>
                 <span class="muted">• <strong>${totalVidas} vida(s)</strong> (${totalVidas >= 3 ? "Zero carência p/ consultas" : "1-2 vidas: 30d carência p/ consultas"})</span>
                 ${c.carenciasPersonalizadas ? `<span class="badge badge-teal">🔐 Carência Personalizada (Master)</span>` : ""}
               </div>
 
-              <h3 class="appt-patient">${c.titularNome} <small class="muted">(CPF: ${formatCpf(c.titularCpf)} • WhatsApp: ${c.titularPhone || "-"})</small></h3>
+              <h3 class="appt-patient">${c.titularNome} <small class="muted">(CPF: ${formatCpf(c.titularCpf)}${c.titularDataNascimento ? ` • Nasc: ${formatDateBr(c.titularDataNascimento)}` : ""} • WhatsApp: ${c.titularPhone || "-"})</small></h3>
+
+              ${
+                c.titularEndereco && (c.titularEndereco.logradouro || c.titularEndereco.cep)
+                  ? `<p class="appt-meta" style="margin-bottom:0.2rem;">📍 <strong>Endereço:</strong> ${formatEnderecoResumo(c.titularEndereco)}</p>`
+                  : ""
+              }
 
               <p class="appt-meta">
                 📜 <strong>Adesão:</strong> ${formatDateBr(c.createdAt)} •
@@ -1126,8 +1216,9 @@
     const row = document.createElement("div");
     row.className = "dep-row";
     row.innerHTML = `
-      <input type="text" class="dep-input-name" placeholder="Nome completo do dependente *" required />
-      <input type="text" class="dep-input-cpf" placeholder="CPF do dependente *" maxlength="14" required />
+      <input type="text" class="dep-input-name" placeholder="Nome completo do dependente *" />
+      <input type="text" class="dep-input-cpf" placeholder="CPF (11 dígitos) *" maxlength="14" title="Digite um CPF válido" />
+      <input type="date" class="dep-input-birth" title="Data de Nascimento do dependente *" />
       <select class="dep-input-rel">
         <option value="Filho(a)">Filho(a)</option>
         <option value="Cônjuge">Cônjuge</option>
@@ -1139,6 +1230,20 @@
     const cpfInput = row.querySelector(".dep-input-cpf");
     cpfInput.addEventListener("input", (e) => {
       e.target.value = formatCpf(e.target.value);
+      const digits = sanitizeDoc(e.target.value);
+      cpfInput.classList.remove("input-valid", "input-invalid");
+      if (digits.length === 11) {
+        if (isValidCpf(digits)) {
+          cpfInput.classList.add("input-valid");
+          cpfInput.title = "✅ CPF válido";
+        } else {
+          cpfInput.classList.add("input-invalid");
+          cpfInput.title = "❌ CPF inválido (verifique os dígitos)";
+        }
+      } else if (digits.length > 0) {
+        cpfInput.classList.add("input-invalid");
+        cpfInput.title = "Digite os 11 dígitos do CPF";
+      }
     });
     row.querySelector("button").onclick = () => {
       row.remove();
@@ -1153,10 +1258,29 @@
     rows.forEach((r) => {
       const nome = r.querySelector(".dep-input-name")?.value.trim();
       const cpf = r.querySelector(".dep-input-cpf")?.value.trim();
+      const dataNascimento = r.querySelector(".dep-input-birth")?.value;
       const parentesco = r.querySelector(".dep-input-rel")?.value;
-      if (nome) list.push({ nome, cpf, parentesco });
+      if (nome || cpf || dataNascimento) {
+        list.push({ nome, cpf, dataNascimento, parentesco });
+      }
     });
     return list;
+  }
+
+  function validateDepsList(dependentes) {
+    for (let i = 0; i < dependentes.length; i++) {
+      const d = dependentes[i];
+      if (!d.nome) {
+        return `Informe o nome completo do ${i + 1}º dependente.`;
+      }
+      if (!isValidCpf(d.cpf)) {
+        return `O CPF do dependente "${d.nome}" (${d.cpf || "vazio"}) é inválido. Verifique os 11 dígitos.`;
+      }
+      if (!d.dataNascimento) {
+        return `Informe a data de nascimento do dependente "${d.nome}".`;
+      }
+    }
+    return null;
   }
 
   function updateSubscriptionPriceSummary() {
@@ -1166,8 +1290,9 @@
     const taxaAdesao = REGRAS.taxaAdesaoFixa;
     const totalPagoNoAto = valorMensal + taxaAdesao;
     const mensalComDesconto = valorMensal * (1 - REGRAS.descontoPontualidadePct / 100);
-    const depsCount = $("initial-deps-container").querySelectorAll(".dep-row").length;
-    const totalVidas = 1 + depsCount;
+    const depsRowsCount = $("initial-deps-container").querySelectorAll(".dep-row").length;
+    const totalVidas = Math.max(plan ? Number(plan.pessoas || 1) : 1, 1 + depsRowsCount);
+    const depsCount = totalVidas - 1;
     const startIso = $("sub-start-date").value || getTodayIso();
     const dueIso = $("sub-due-date").value || addMonthsIso(startIso, 1);
 
@@ -1185,6 +1310,25 @@
           : ""
       }
     `;
+  }
+
+  function syncDepRowsToPlan(pl) {
+    if (!pl || pl.categoria !== "TABELA") return;
+    const container = $("initial-deps-container");
+    const targetDeps = Number(pl.maxDependentes || 0);
+    let currentRows = container.querySelectorAll(".dep-row");
+
+    while (currentRows.length < targetDeps) {
+      container.appendChild(createDepRowElement(autoSelectPlanByDepsCount));
+      currentRows = container.querySelectorAll(".dep-row");
+    }
+    while (currentRows.length > targetDeps) {
+      const last = currentRows[currentRows.length - 1];
+      const hasText = last.querySelector(".dep-input-name")?.value.trim();
+      if (hasText) break;
+      last.remove();
+      currentRows = container.querySelectorAll(".dep-row");
+    }
   }
 
   function autoSelectPlanByDepsCount() {
@@ -1412,6 +1556,7 @@
         $("sub-custom-value").value = "";
         $("sub-custom-value").focus();
       }
+      syncDepRowsToPlan(pl);
       updateSubscriptionPriceSummary();
     };
 
@@ -1553,7 +1698,12 @@
     });
 
     $("appt-cpf").addEventListener("input", (e) => {
-      e.target.value = formatCpf(e.target.value);
+      const val = e.target.value.trim();
+      if (/^[mM]/.test(val)) {
+        e.target.value = val.toUpperCase();
+      } else {
+        e.target.value = formatCpf(val);
+      }
       lastPlanCheck = null;
     });
 
@@ -1659,6 +1809,10 @@
       $("form-subscription").reset();
       $("initial-deps-container").innerHTML = "";
       const today = getTodayIso();
+      $("sub-matricula").value = generateMatriculaLocal();
+      $("sub-cpf").classList.remove("input-valid", "input-invalid");
+      $("sub-cpf-feedback").textContent = "";
+      $("sub-cep-feedback").textContent = "Digite o CEP para preencher rua, bairro e cidade automaticamente.";
       $("sub-start-date").value = today;
       $("sub-due-date").value = addMonthsIso(today, 1); // 1º vencimento do Asaas no mês seguinte!
       $("sub-end-date").value = "";
@@ -1677,6 +1831,58 @@
 
     $("sub-cpf").addEventListener("input", (e) => {
       e.target.value = formatCpf(e.target.value);
+      const digits = sanitizeDoc(e.target.value);
+      const fb = $("sub-cpf-feedback");
+      e.target.classList.remove("input-valid", "input-invalid");
+      if (digits.length === 11) {
+        if (isValidCpf(digits)) {
+          e.target.classList.add("input-valid");
+          fb.textContent = "✅ CPF válido";
+          fb.style.color = "#15803d";
+        } else {
+          e.target.classList.add("input-invalid");
+          fb.textContent = "❌ CPF inválido (verifique os dígitos)";
+          fb.style.color = "#b91c1c";
+        }
+      } else if (digits.length > 0) {
+        fb.textContent = `Digite os 11 dígitos do CPF (${digits.length}/11)`;
+        fb.style.color = "#6b7280";
+      } else {
+        fb.textContent = "";
+      }
+    });
+
+    // Busca automática de endereço pelo CEP (ViaCEP)
+    $("sub-cep").addEventListener("input", async (e) => {
+      e.target.value = formatCep(e.target.value);
+      const cep = sanitizeDoc(e.target.value);
+      const fb = $("sub-cep-feedback");
+      if (cep.length !== 8) {
+        fb.textContent = "Digite os 8 dígitos do CEP para busca automática.";
+        fb.style.color = "#6b7280";
+        return;
+      }
+      fb.textContent = "⏳ Buscando endereço pelo CEP...";
+      fb.style.color = "#0f766e";
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        const data = await res.json();
+        if (data && !data.erro) {
+          if (data.logradouro) $("sub-street").value = data.logradouro;
+          if (data.bairro) $("sub-neighborhood").value = data.bairro;
+          if (data.localidade) $("sub-city").value = data.localidade;
+          if (data.uf) $("sub-uf").value = data.uf;
+          fb.textContent = `✅ Endereço encontrado: ${data.logradouro || ""}, ${data.bairro || ""} - ${data.localidade}/${data.uf}`;
+          fb.style.color = "#15803d";
+          $("sub-number").focus();
+        } else {
+          fb.textContent = "⚠️ CEP não encontrado no ViaCEP. Preencha o endereço manualmente.";
+          fb.style.color = "#b45309";
+        }
+      } catch {
+        fb.textContent = "⚠️ Não foi possível consultar o CEP automaticamente. Preencha manualmente.";
+        fb.style.color = "#b45309";
+      }
     });
 
     async function submitSubscription(masterOverride = false) {
@@ -1685,7 +1891,44 @@
       const dataAdesao = $("sub-start-date").value || getTodayIso();
       const nextDueDate = $("sub-due-date").value || getTodayIso();
       const endDate = $("sub-end-date").value || undefined;
+      const matricula = $("sub-matricula").value || generateMatriculaLocal();
+      const titularCpf = $("sub-cpf").value;
+      const dataNascimento = $("sub-birthdate").value;
+      const endereco = {
+        cep: sanitizeDoc($("sub-cep").value),
+        logradouro: $("sub-street").value.trim(),
+        numero: $("sub-number").value.trim(),
+        complemento: $("sub-comp").value.trim(),
+        bairro: $("sub-neighborhood").value.trim(),
+        cidade: $("sub-city").value.trim(),
+        uf: $("sub-uf").value.trim().toUpperCase(),
+      };
       const dependentes = readDepsFromContainer("initial-deps-container");
+      const totalVidasContratadas = Math.max(plan ? Number(plan.pessoas || 1) : 1, 1 + dependentes.length);
+
+      if (!isValidCpf(titularCpf)) {
+        alert("❌ O CPF do titular é inválido! Verifique os 11 dígitos informados.");
+        $("sub-cpf").focus();
+        return;
+      }
+
+      if (!dataNascimento) {
+        alert("Informe a data de nascimento do titular.");
+        $("sub-birthdate").focus();
+        return;
+      }
+
+      if (endereco.cep.length !== 8 || !endereco.logradouro) {
+        alert("Informe o CEP (8 dígitos) e o endereço completo do titular.");
+        $("sub-cep").focus();
+        return;
+      }
+
+      const depErr = validateDepsList(dependentes);
+      if (depErr) {
+        alert(`❌ ${depErr}`);
+        return;
+      }
 
       if (!valorMensal || valorMensal <= 0) {
         alert("Informe o valor mensal do plano.");
@@ -1697,11 +1940,15 @@
       box.textContent = "⏳ Criando assinatura no Asaas e verificando regras...";
 
       const res = await apiCriarAssinatura({
+        matricula,
         name: $("sub-name").value.trim(),
-        cpfCnpj: $("sub-cpf").value,
+        cpfCnpj: titularCpf,
+        dataNascimento,
         phone: $("sub-phone").value,
+        endereco,
         planId: plan ? plan.id : "custom",
         planCategory: plan ? plan.categoria : "CUSTOM",
+        vidasContratadas: totalVidasContratadas,
         value: valorMensal,
         taxaAdesao: REGRAS.taxaAdesaoFixa,
         cycle: "MONTHLY",
@@ -1722,19 +1969,20 @@
           renderPlanos();
         }
         box.classList.add("check-ok");
+        const matFinal = res.contrato?.matricula || matricula;
         const linkBoleto = res.firstPayment?.bankSlipUrl || res.firstPayment?.invoiceUrl;
         const valorPagoAto = valorMensal + REGRAS.taxaAdesaoFixa;
         const whatsUrl = buildBoletoWhatsAppUrl({
           phone: $("sub-phone").value,
           nome: $("sub-name").value.trim(),
-          descricao: `${plan ? plan.nome : "Plano"} (Mensalidade Asaas - Venc. ${formatDateBr(nextDueDate)})`,
+          descricao: `${plan ? plan.nome : "Plano"} [${matFinal}] (Mensalidade Asaas - Venc. ${formatDateBr(nextDueDate)})`,
           valor: valorMensal,
           vencimento: nextDueDate,
           link: linkBoleto,
         });
 
         box.innerHTML = `
-          ✅ <strong>Contrato criado e salvo com ${1 + dependentes.length} vida(s)!</strong><br>
+          ✅ <strong>Contrato criado com sucesso! Matrícula: <code>${matFinal}</code> (${totalVidasContratadas} vida(s))</strong><br>
           💵 <strong>Recebido no ato do contrato (1ª mensalidade + R$ 10,00 adesão):</strong> ${formatMoney(valorPagoAto)}<br>
           🧾 <strong>Mensalidades no Asaas (a partir do mês seguinte):</strong> ${formatMoney(valorMensal)}/mês •
           <strong>1º Vencimento Asaas:</strong> ${formatDateBr(nextDueDate)} (5% de desconto até o vencimento)<br>
@@ -1978,6 +2226,12 @@
       const dependentes = readDepsFromContainer("post-deps-container");
       if (dependentes.length === 0) {
         alert("Informe os dados do dependente.");
+        return;
+      }
+
+      const depErr = validateDepsList(dependentes);
+      if (depErr) {
+        alert(`❌ ${depErr}`);
         return;
       }
 

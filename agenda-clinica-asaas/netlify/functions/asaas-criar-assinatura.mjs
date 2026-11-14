@@ -7,17 +7,13 @@ import {
   checkQuarantineBlock,
   findOrCreateCustomer,
   formatDateBr,
+  generateMatricula,
   getTodayBrazilIso,
+  isValidCpf,
   jsonResponse,
   sanitizeCpfCnpj,
 } from "./_asaas.mjs";
 
-/**
- * Cria assinatura no Asaas:
- * - A 1ª mensalidade + Taxa de Adesão (R$ 10,00) é paga no ato do contrato.
- * - As mensalidades recorrentes no Asaas começam a partir do mês seguinte (nextDueDate = +1 mês).
- * - Boletos do Asaas já saem com 5% de desconto até o vencimento e 2% de multa + 2% de juros após o vencimento.
- */
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") {
     return jsonResponse(200, { ok: true });
@@ -29,12 +25,16 @@ export async function handler(event) {
   try {
     const body = JSON.parse(event.body || "{}");
     const {
+      matricula: inputMatricula,
       name,
       cpfCnpj,
+      dataNascimento,
       phone,
       email,
+      endereco = {},
       planId,
       planCategory = "TABELA",
+      vidasContratadas,
       value,
       taxaAdesao = 10.0,
       cycle = "MONTHLY",
@@ -47,12 +47,54 @@ export async function handler(event) {
       masterOverride = false,
     } = body;
 
+    if (!isValidCpf(cpfCnpj)) {
+      return jsonResponse(400, {
+        ok: false,
+        error: `CPF do titular (${cpfCnpj || "vazio"}) é inválido. Verifique os dígitos informados.`,
+      });
+    }
+
+    if (!dataNascimento) {
+      return jsonResponse(400, {
+        ok: false,
+        error: "Informe a data de nascimento do titular.",
+      });
+    }
+
+    if (!endereco?.cep || !endereco?.logradouro) {
+      return jsonResponse(400, {
+        ok: false,
+        error: "Informe o endereço completo com CEP do titular.",
+      });
+    }
+
+    const cleanDepsInput = (Array.isArray(dependentes) ? dependentes : []).filter(
+      (d) => d && (d.nome || d.cpf || d.dataNascimento)
+    );
+
+    for (const dep of cleanDepsInput) {
+      if (!dep.nome || !String(dep.nome).trim()) {
+        return jsonResponse(400, { ok: false, error: "Preencha o nome completo de todos os dependentes informados." });
+      }
+      if (!isValidCpf(dep.cpf)) {
+        return jsonResponse(400, {
+          ok: false,
+          error: `CPF inválido para o dependente "${dep.nome}" (${dep.cpf || "vazio"}).`,
+        });
+      }
+      if (!dep.dataNascimento) {
+        return jsonResponse(400, {
+          ok: false,
+          error: `Informe a data de nascimento do dependente "${dep.nome}".`,
+        });
+      }
+    }
+
     const valorMensal = Number(value);
     const valorAdesao = Number(taxaAdesao || 0);
     const valorPagoNoAto = Number((valorMensal + valorAdesao).toFixed(2));
     const today = getTodayBrazilIso();
     const adesaoIso = dataAdesao || today;
-    // As mensalidades do Asaas começam a partir do mês seguinte ao ato do contrato
     const vencimentoMesSeguinte = nextDueDate || addMonthsIso(adesaoIso, 1);
 
     if (!valorMensal || valorMensal <= 0) {
@@ -61,10 +103,15 @@ export async function handler(event) {
 
     const store = getStore("clinica-planos-db");
     let historicoSaidas = [];
+    let contratos = [];
     try {
-      historicoSaidas = (await store.get("historico-saidas", { type: "json" })) || [];
+      [historicoSaidas, contratos] = await Promise.all([
+        store.get("historico-saidas", { type: "json" }).then((r) => r || []),
+        store.get("contratos", { type: "json" }).then((r) => r || []),
+      ]);
     } catch {
       historicoSaidas = [];
+      contratos = [];
     }
 
     // 1. Verifica bloqueio de 6 meses para quem saiu ou cancelou o plano (a menos que liberado com Acesso Master)
@@ -78,7 +125,7 @@ export async function handler(event) {
         });
       }
 
-      for (const dep of dependentes || []) {
+      for (const dep of cleanDepsInput) {
         if (dep?.cpf) {
           const bloqueioDep = checkQuarantineBlock(historicoSaidas, dep.cpf, today);
           if (bloqueioDep) {
@@ -92,7 +139,16 @@ export async function handler(event) {
       }
     }
 
-    const customer = await findOrCreateCustomer({ name, cpfCnpj, phone, email });
+    const matricula = inputMatricula || generateMatricula(contratos.length);
+
+    const customer = await findOrCreateCustomer({
+      name,
+      cpfCnpj,
+      phone,
+      email,
+      endereco,
+      externalReference: matricula,
+    });
 
     const subPayload = {
       customer: customer.id,
@@ -100,7 +156,8 @@ export async function handler(event) {
       value: valorMensal,
       nextDueDate: vencimentoMesSeguinte,
       cycle,
-      description,
+      description: `[${matricula}] ${description}`,
+      externalReference: matricula,
       ...ASAAS_BILLING_RULES,
     };
 
@@ -113,7 +170,6 @@ export async function handler(event) {
       body: JSON.stringify(subPayload),
     });
 
-    // Busca o 1º boleto gerado no Asaas (referente ao mês seguinte) para já ter o link disponível
     let firstPayment = null;
     try {
       const payments = await asaasFetch(`/subscriptions/${subscription.id}/payments?limit=1`);
@@ -122,28 +178,40 @@ export async function handler(event) {
       firstPayment = null;
     }
 
-    const cleanDependentes = (Array.isArray(dependentes) ? dependentes : [])
-      .filter((d) => d && d.nome && String(d.nome).trim())
-      .map((d, idx) => ({
-        id: d.id || `dep-${Date.now()}-${idx}`,
-        nome: String(d.nome).trim(),
-        cpf: sanitizeCpfCnpj(d.cpf),
-        parentesco: String(d.parentesco || "Dependente").trim(),
-        dataInclusao: d.dataInclusao || adesaoIso,
-        tipoInclusao: "ADESAO_INICIAL",
-      }));
+    const cleanDependentes = cleanDepsInput.map((d, idx) => ({
+      id: d.id || `dep-${Date.now()}-${idx}`,
+      nome: String(d.nome).trim(),
+      cpf: sanitizeCpfCnpj(d.cpf),
+      dataNascimento: d.dataNascimento || null,
+      parentesco: String(d.parentesco || "Dependente").trim(),
+      dataInclusao: d.dataInclusao || adesaoIso,
+      tipoInclusao: "ADESAO_INICIAL",
+    }));
 
     const proximoReajusteEm = addYearsIso(adesaoIso, 1);
+    const totalVidas = Math.max(Number(vidasContratadas || 1), 1 + cleanDependentes.length);
 
     const contrato = {
       id: subscription.id,
+      matricula,
       subscriptionId: subscription.id,
       customerId: customer.id,
       titularNome: customer.name || name,
       titularCpf: sanitizeCpfCnpj(cpfCnpj),
+      titularDataNascimento: dataNascimento,
       titularPhone: sanitizeCpfCnpj(phone),
+      endereco: {
+        cep: sanitizeCpfCnpj(endereco.cep),
+        logradouro: endereco.logradouro || "",
+        numero: endereco.numero || "",
+        complemento: endereco.complemento || "",
+        bairro: endereco.bairro || "",
+        cidade: endereco.cidade || "",
+        uf: endereco.uf || "",
+      },
       planId: planId || "personalizado",
       planCategory,
+      vidasContratadas: totalVidas,
       planName: description,
       valorMensal,
       taxaAdesaoInicial: valorAdesao,
@@ -165,13 +233,12 @@ export async function handler(event) {
         {
           data: today,
           tipo: "ADESAO",
-          descricao: `Contrato firmado em ${formatDateBr(adesaoIso)} (${1 + cleanDependentes.length} vida(s)). Pago no ato: R$ ${valorPagoNoAto.toFixed(2)} (1ª mensalidade R$ ${valorMensal.toFixed(2)} + R$ ${valorAdesao.toFixed(2)} adesão). Mensalidades Asaas (R$ ${valorMensal.toFixed(2)}/mês) iniciam em ${formatDateBr(vencimentoMesSeguinte)}. Reajuste anual (+5%) em ${formatDateBr(proximoReajusteEm)}.${masterOverride ? " [Liberado via Acesso Master]" : ""}`,
+          descricao: `Matrícula ${matricula} firmada em ${formatDateBr(adesaoIso)} (${totalVidas} vida(s)). Pago no ato: R$ ${valorPagoNoAto.toFixed(2)} (1ª mensalidade R$ ${valorMensal.toFixed(2)} + R$ ${valorAdesao.toFixed(2)} adesão). Mensalidades Asaas (R$ ${valorMensal.toFixed(2)}/mês) iniciam em ${formatDateBr(vencimentoMesSeguinte)}.${masterOverride ? " [Liberado via Acesso Master]" : ""}`,
         },
       ],
     };
 
     try {
-      const contratos = (await store.get("contratos", { type: "json" })) || [];
       const filtrados = contratos.filter((c) => c.subscriptionId !== contrato.subscriptionId);
       filtrados.unshift(contrato);
       await store.setJSON("contratos", filtrados);

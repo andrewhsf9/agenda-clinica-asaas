@@ -7,7 +7,9 @@ import {
   asaasFetch,
   checkQuarantineBlock,
   formatDateBr,
+  generateMatricula,
   getTodayBrazilIso,
+  isValidCpf,
   jsonResponse,
   sanitizeCpfCnpj,
 } from "./_asaas.mjs";
@@ -132,20 +134,39 @@ export async function handler(event) {
 
     if (action === "ADD_DEPENDENTS") {
       const rawDeps = Array.isArray(body.dependentes) ? body.dependentes : [];
-      const novosDeps = rawDeps
-        .filter((d) => d && d.nome && String(d.nome).trim())
-        .map((d, i) => ({
-          id: `dep-${Date.now()}-${i}`,
-          nome: String(d.nome).trim(),
-          cpf: sanitizeCpfCnpj(d.cpf),
-          parentesco: String(d.parentesco || "Dependente").trim(),
-          dataInclusao: d.dataInclusao || today,
-          tipoInclusao: "POSTERIOR",
-        }));
+      const validInput = rawDeps.filter((d) => d && (d.nome || d.cpf || d.dataNascimento));
 
-      if (novosDeps.length === 0) {
+      if (validInput.length === 0) {
         return jsonResponse(400, { ok: false, error: "Informe pelo menos 1 dependente para adicionar." });
       }
+
+      for (const d of validInput) {
+        if (!d.nome || !String(d.nome).trim()) {
+          return jsonResponse(400, { ok: false, error: "Informe o nome completo do dependente." });
+        }
+        if (!isValidCpf(d.cpf)) {
+          return jsonResponse(400, {
+            ok: false,
+            error: `CPF inválido para o dependente "${d.nome}" (${d.cpf || "vazio"}). Verifique os dígitos.`,
+          });
+        }
+        if (!d.dataNascimento) {
+          return jsonResponse(400, {
+            ok: false,
+            error: `Informe a data de nascimento do dependente "${d.nome}".`,
+          });
+        }
+      }
+
+      const novosDeps = validInput.map((d, i) => ({
+        id: `dep-${Date.now()}-${i}`,
+        nome: String(d.nome).trim(),
+        cpf: sanitizeCpfCnpj(d.cpf),
+        dataNascimento: d.dataNascimento || null,
+        parentesco: String(d.parentesco || "Dependente").trim(),
+        dataInclusao: d.dataInclusao || today,
+        tipoInclusao: "POSTERIOR",
+      }));
 
       // Verifica bloqueio de 6 meses (quarentena de saída/cancelamento)
       if (!body.masterOverride) {

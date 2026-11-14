@@ -27,15 +27,17 @@ export async function handler(event) {
 
   try {
     const params = event.queryStringParameters || {};
-    const cpf = sanitizeCpfCnpj(params.cpf);
+    const rawQuery = String(params.cpf || "").trim();
+    const cpf = sanitizeCpfCnpj(rawQuery);
+    const isMatriculaQuery = rawQuery.toUpperCase().startsWith("MAT-");
     const procedimento = params.procedimento || "CONSULTA";
     const masterOverride = params.masterOverride === "true" || params.masterOverride === "1";
 
-    if (!cpf || (cpf.length !== 11 && cpf.length !== 14)) {
+    if (!isMatriculaQuery && (!cpf || (cpf.length !== 11 && cpf.length !== 14))) {
       return jsonResponse(400, {
         autorizado: false,
         statusPlano: "CPF_INVALIDO",
-        motivo: "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido.",
+        motivo: "Informe um CPF válido (11 dígitos) ou número de Matrícula (ex: MAT-2026-...).",
       });
     }
 
@@ -58,6 +60,12 @@ export async function handler(event) {
 
       for (const c of contratos || []) {
         if (c.status === "CANCELED") continue;
+        if (isMatriculaQuery && String(c.matricula || "").toUpperCase() === rawQuery.toUpperCase()) {
+          contratoLocal = c;
+          targetCpf = sanitizeCpfCnpj(c.titularCpf);
+          dataAdesaoPessoa = c.createdAt || today;
+          break;
+        }
         if (sanitizeCpfCnpj(c.titularCpf) === cpf) {
           contratoLocal = c;
           dataAdesaoPessoa = c.createdAt || today;
@@ -79,6 +87,14 @@ export async function handler(event) {
       }
     } catch {
       // Segue consultando direto no Asaas
+    }
+
+    if (!targetCpf) {
+      return jsonResponse(200, {
+        autorizado: false,
+        statusPlano: "NAO_ENCONTRADO",
+        motivo: `Matrícula "${rawQuery}" não encontrada no banco de contratos ativos.`,
+      });
     }
 
     const customersRes = await asaasFetch(`/customers?cpfCnpj=${encodeURIComponent(targetCpf)}&limit=10`);
@@ -178,7 +194,9 @@ export async function handler(event) {
     }
 
     // 4. Verifica Carência do Procedimento (baseado na data de adesão e na quantidade de vidas do plano)
-    const totalVidas = contratoLocal ? 1 + (contratoLocal.dependentes?.length || 0) : 1;
+    const totalVidas = contratoLocal
+      ? Math.max(Number(contratoLocal.vidasContratadas || 1), 1 + (contratoLocal.dependentes?.length || 0))
+      : 1;
     const dataInicioCarencia =
       dataAdesaoPessoa || contratoLocal?.createdAt || activeSub.dateCreated || paidPayments[paidPayments.length - 1]?.paymentDate || today;
     const regrasDoContrato = contratoLocal?.carenciasPersonalizadas

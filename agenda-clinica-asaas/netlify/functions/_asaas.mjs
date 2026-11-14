@@ -1,5 +1,5 @@
 /**
- * Helper compartilhado para chamadas autenticadas à API v3 do Asaas e regras de carência/quarentena.
+ * Helper compartilhado para chamadas autenticadas à API v3 do Asaas, validação de CPF e regras de carência/quarentena.
  */
 
 const ASAAS_URLS = {
@@ -30,6 +30,42 @@ export const DEFAULT_CARENCIAS = {
   consulta3MaisVidasDias: 0,
   quarentenaSaidaMeses: 6,
 };
+
+export function sanitizeCpfCnpj(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+/**
+ * Validador oficial de CPF (11 dígitos e cálculo dos 2 dígitos verificadores).
+ */
+export function isValidCpf(value) {
+  const cpf = sanitizeCpfCnpj(value);
+  if (cpf.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(cpf)) return false;
+
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += Number(cpf[i]) * (10 - i);
+  }
+  let rev = 11 - (sum % 11);
+  if (rev === 10 || rev === 11) rev = 0;
+  if (rev !== Number(cpf[9])) return false;
+
+  sum = 0;
+  for (let i = 0; i < 10; i++) {
+    sum += Number(cpf[i]) * (11 - i);
+  }
+  rev = 11 - (sum % 11);
+  if (rev === 10 || rev === 11) rev = 0;
+  return rev === Number(cpf[10]);
+}
+
+export function generateMatricula(existingCount = 0) {
+  const year = new Date(Date.now() - 3 * 60 * 60 * 1000).getUTCFullYear();
+  const seq = String(existingCount + 1).padStart(4, "0");
+  const rand = Math.floor(10 + Math.random() * 90);
+  return `MAT-${year}-${seq}${rand}`;
+}
 
 export function getTodayBrazilIso() {
   const now = new Date(Date.now() - 3 * 60 * 60 * 1000);
@@ -177,11 +213,7 @@ export async function asaasFetch(path, options = {}) {
   return payload;
 }
 
-export function sanitizeCpfCnpj(value) {
-  return String(value || "").replace(/\D/g, "");
-}
-
-export async function findOrCreateCustomer({ name, cpfCnpj, phone, email }) {
+export async function findOrCreateCustomer({ name, cpfCnpj, phone, email, endereco, externalReference }) {
   const cleanDoc = sanitizeCpfCnpj(cpfCnpj);
   if (!cleanDoc) {
     const err = new Error("CPF/CNPJ é obrigatório.");
@@ -189,9 +221,34 @@ export async function findOrCreateCustomer({ name, cpfCnpj, phone, email }) {
     throw err;
   }
 
+  const customerBody = {
+    name,
+    cpfCnpj: cleanDoc,
+    mobilePhone: sanitizeCpfCnpj(phone) || undefined,
+    email: email || undefined,
+    postalCode: sanitizeCpfCnpj(endereco?.cep) || undefined,
+    address: endereco?.logradouro || undefined,
+    addressNumber: endereco?.numero || undefined,
+    complement: endereco?.complemento || undefined,
+    province: endereco?.bairro || undefined,
+    externalReference: externalReference || undefined,
+    notificationDisabled: false,
+  };
+
   const search = await asaasFetch(`/customers?cpfCnpj=${encodeURIComponent(cleanDoc)}`);
   if (search.data && search.data.length > 0) {
-    return search.data[0];
+    const existing = search.data[0];
+    if (endereco?.cep) {
+      try {
+        return await asaasFetch(`/customers/${existing.id}`, {
+          method: "PUT",
+          body: JSON.stringify(customerBody),
+        });
+      } catch {
+        return existing;
+      }
+    }
+    return existing;
   }
 
   if (!name) {
@@ -202,12 +259,6 @@ export async function findOrCreateCustomer({ name, cpfCnpj, phone, email }) {
 
   return asaasFetch("/customers", {
     method: "POST",
-    body: JSON.stringify({
-      name,
-      cpfCnpj: cleanDoc,
-      mobilePhone: sanitizeCpfCnpj(phone) || undefined,
-      email: email || undefined,
-      notificationDisabled: false,
-    }),
+    body: JSON.stringify(customerBody),
   });
 }

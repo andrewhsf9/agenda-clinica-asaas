@@ -102,7 +102,7 @@
             </p>
           </div>
           <div class="filter-right">
-            <input type="text" id="search-planos" placeholder="🔍 Buscar titular ou dependente (nome/CPF)..." style="min-width: 260px;" />
+            <input type="text" id="search-planos" placeholder="🔍 Buscar por Matrícula, Nome ou CPF..." style="min-width: 280px;" />
             <button type="button" id="btn-refresh-planos" class="btn btn-outline">🔄 Sincronizar Asaas</button>
           </div>
         </div>
@@ -188,8 +188,9 @@
 
         <div class="form-row">
           <div class="form-field">
-            <label for="appt-cpf">CPF do Paciente (Titular ou Dependente) *</label>
-            <input type="text" id="appt-cpf" placeholder="000.000.000-00" maxlength="18" required />
+            <label for="appt-cpf">CPF (Titular/Dependente) ou Matrícula *</label>
+            <input type="text" id="appt-cpf" placeholder="000.000.000-00 ou MAT-2026-..." maxlength="24" required />
+            <small id="appt-cpf-status" class="muted"></small>
           </div>
           <div class="form-field">
             <label for="appt-phone">WhatsApp</label>
@@ -303,20 +304,72 @@
       </div>
       <form id="form-subscription" class="modal-body">
         <div class="sub-panel">
-          <h3>👤 1. Responsável Financeiro (Titular do Plano)</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+            <h3>👤 1. Responsável Financeiro (Titular do Plano)</h3>
+            <div style="display:flex; align-items:center; gap:0.4rem;">
+              <label for="sub-matricula" style="font-size:0.85rem; font-weight:700; color:var(--primary-dark);">🏷️ Matrícula:</label>
+              <input type="text" id="sub-matricula" readonly style="width:165px; font-weight:700; background:var(--primary-soft); color:var(--primary-dark);" />
+            </div>
+          </div>
+
           <div class="form-row">
             <div class="form-field">
-              <label for="sub-cpf">CPF do Titular *</label>
-              <input type="text" id="sub-cpf" placeholder="000.000.000-00" required />
+              <label for="sub-cpf">CPF do Titular (com validação) *</label>
+              <input type="text" id="sub-cpf" placeholder="000.000.000-00" maxlength="14" required />
+              <small id="sub-cpf-feedback" class="cpf-feedback"></small>
             </div>
             <div class="form-field">
-              <label for="sub-phone">WhatsApp (para envio dos boletos) *</label>
+              <label for="sub-birthdate">Data de Nascimento do Titular *</label>
+              <input type="date" id="sub-birthdate" required />
+            </div>
+            <div class="form-field">
+              <label for="sub-phone">WhatsApp (para boletos) *</label>
               <input type="tel" id="sub-phone" placeholder="(11) 99999-9999" required />
             </div>
           </div>
+
           <div class="form-field">
             <label for="sub-name">Nome Completo do Titular *</label>
             <input type="text" id="sub-name" placeholder="Nome completo do responsável" required />
+          </div>
+
+          <h4 style="margin:0.4rem 0 0; font-size:0.95rem; color:var(--primary-dark);">📍 Endereço do Titular (Busca automática pelo CEP)</h4>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="sub-cep">CEP *</label>
+              <input type="text" id="sub-cep" placeholder="00000-000" maxlength="9" required />
+              <small id="sub-cep-feedback" class="muted">Digite o CEP para preencher a rua</small>
+            </div>
+            <div class="form-field" style="grid-column: span 2;">
+              <label for="sub-street">Rua / Logradouro *</label>
+              <input type="text" id="sub-street" placeholder="Rua, Avenida..." required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="sub-number">Número *</label>
+              <input type="text" id="sub-number" placeholder="Nº" required />
+            </div>
+            <div class="form-field">
+              <label for="sub-comp">Complemento</label>
+              <input type="text" id="sub-comp" placeholder="Apto, Bloco, Casa..." />
+            </div>
+            <div class="form-field">
+              <label for="sub-neighborhood">Bairro *</label>
+              <input type="text" id="sub-neighborhood" placeholder="Bairro" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field" style="grid-column: span 2;">
+              <label for="sub-city">Cidade *</label>
+              <input type="text" id="sub-city" placeholder="Cidade" required />
+            </div>
+            <div class="form-field">
+              <label for="sub-uf">UF *</label>
+              <input type="text" id="sub-uf" placeholder="UF" maxlength="2" required />
+            </div>
           </div>
         </div>
 

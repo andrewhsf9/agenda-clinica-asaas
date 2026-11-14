@@ -665,8 +665,8 @@ select {
 
 .dep-row {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 0.9fr auto;
-  gap: 0.5rem;
+  grid-template-columns: 1.35fr 1fr 0.95fr 0.85fr auto;
+  gap: 0.45rem;
   align-items: center;
   background: #fff;
   padding: 0.5rem;
@@ -674,7 +674,17 @@ select {
   border-radius: 10px;
 }
 
-@media (max-width: 640px) {
+.input-valid {
+  border-color: #16a34a !important;
+  background-color: #f0fdf4 !important;
+}
+
+.input-invalid {
+  border-color: #dc2626 !important;
+  background-color: #fef2f2 !important;
+}
+
+@media (max-width: 680px) {
   .dep-row {
     grid-template-columns: 1fr;
   }
