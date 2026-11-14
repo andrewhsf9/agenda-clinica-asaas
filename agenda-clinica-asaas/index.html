@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agenda da Clínica — Integração Asaas</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">🏥</div>
+        <div>
+          <h1 id="clinic-name">Clínica Vida &amp; Saúde</h1>
+          <p id="clinic-subtitle" class="subtitle">Agenda de Consultas • Integração Asaas</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <span id="integration-badge" class="mode-badge mode-demo" title="Status da integração Asaas">
+          🧪 Modo Demo
+        </span>
+        <div class="font-controls" aria-label="Tamanho da letra">
+          <button type="button" id="btn-font-dec" class="btn-icon" title="Diminuir letra">A-</button>
+          <button type="button" id="btn-font-inc" class="btn-icon" title="Aumentar letra">A+</button>
+        </div>
+        <button type="button" id="btn-new-subscription" class="btn btn-secondary">
+          🌟 Novo Plano
+        </button>
+        <button type="button" id="btn-new-appointment" class="btn btn-primary">
+          + Nova Consulta
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Resumo rápido -->
+    <section class="stats-grid" aria-label="Resumo da agenda">
+      <div class="stat-card">
+        <span class="stat-label">Confirmadas</span>
+        <strong id="stat-confirmadas" class="stat-value stat-green">0</strong>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Aguardando Pagto</span>
+        <strong id="stat-pendentes" class="stat-value stat-amber">0</strong>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Recusadas (Plano)</span>
+        <strong id="stat-recusadas" class="stat-value stat-red">0</strong>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Faturamento Avulso</span>
+        <strong id="stat-total" class="stat-value stat-teal">R$ 0,00</strong>
+      </div>
+    </section>
+
+    <!-- Filtros -->
+    <section class="filters-bar" aria-label="Filtros da agenda">
+      <div class="filter-group" id="status-filters">
+        <button type="button" class="filter-chip active" data-filter="ALL">Tudo</button>
+        <button type="button" class="filter-chip" data-filter="CONFIRMED">✅ Confirmadas</button>
+        <button type="button" class="filter-chip" data-filter="PENDING">⏳ Aguardando Pagto</button>
+        <button type="button" class="filter-chip" data-filter="REFUSED">🚫 Recusadas (Plano)</button>
+      </div>
+      <div class="filter-right">
+        <select id="filter-professional" class="select-input" aria-label="Filtrar por profissional">
+          <option value="ALL">Todos os profissionais</option>
+        </select>
+        <button type="button" id="btn-print" class="btn btn-outline">🖨️ Imprimir</button>
+      </div>
+    </section>
+
+    <!-- Lista de consultas -->
+    <section id="agenda-list" class="agenda-list" aria-live="polite"></section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Integração financeira segura via <strong>Asaas</strong> (Pix, Boleto, Cartão e Assinaturas).</p>
+    <button type="button" id="btn-open-admin" class="btn-link">⚙️ Área da Recepção</button>
+  </footer>
+
+  <!-- MODAL: NOVA CONSULTA -->
+  <div id="modal-appointment" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-appt-title">
+    <div class="modal-backdrop" data-close="modal-appointment"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-appt-title">📅 Nova Consulta</h2>
+        <button type="button" class="btn-close" data-close="modal-appointment" aria-label="Fechar">✕</button>
+      </div>
+
+      <form id="form-appointment" class="modal-body">
+        <!-- CPFs de teste no Modo Demo -->
+        <div id="demo-cpf-hints" class="demo-hints">
+          <span>🧪 <strong>Teste rápido (Modo Demo):</strong></span>
+          <button type="button" class="hint-btn" data-cpf="111.111.111-11">111... Plano em Dia</button>
+          <button type="button" class="hint-btn" data-cpf="222.222.222-22">222... Inadimplente</button>
+          <button type="button" class="hint-btn" data-cpf="333.333.333-33">333... Sem Plano</button>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="appt-cpf">CPF do Paciente *</label>
+            <input type="text" id="appt-cpf" placeholder="000.000.000-00" maxlength="18" required />
+          </div>
+          <div class="form-field">
+            <label for="appt-phone">WhatsApp</label>
+            <input type="tel" id="appt-phone" placeholder="(11) 99999-9999" />
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="appt-name">Nome Completo *</label>
+          <input type="text" id="appt-name" placeholder="Nome do paciente" required />
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="appt-professional">Profissional / Especialidade *</label>
+            <select id="appt-professional" required></select>
+          </div>
+          <div class="form-field">
+            <label for="appt-date">Data *</label>
+            <input type="date" id="appt-date" required />
+          </div>
+          <div class="form-field">
+            <label for="appt-time">Horário *</label>
+            <input type="time" id="appt-time" value="09:00" required />
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label>Tipo de Atendimento *</label>
+          <div class="radio-cards">
+            <label class="radio-card">
+              <input type="radio" name="appt-type" value="PLANO" checked />
+              <div>
+                <strong>🪪 Plano da Clínica</strong>
+                <small>Verifica automaticamente no Asaas se está em dia</small>
+              </div>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="appt-type" value="PARTICULAR" />
+              <div>
+                <strong>💳 Particular (Avulso)</strong>
+                <small>Gera Pix, Boleto, Cartão ou Link de Pagamento</small>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Bloco PLANO -->
+        <div id="section-plano" class="sub-panel">
+          <button type="button" id="btn-verify-plan" class="btn btn-teal-outline btn-block">
+            🔍 Verificar Situação do Plano no Asaas
+          </button>
+          <div id="plan-check-result" class="check-result hidden"></div>
+        </div>
+
+        <!-- Bloco PARTICULAR -->
+        <div id="section-particular" class="sub-panel hidden">
+          <div class="form-row">
+            <div class="form-field">
+              <label for="appt-value">Valor da Consulta (R$) *</label>
+              <input type="number" id="appt-value" step="0.01" min="1" />
+            </div>
+            <div class="form-field">
+              <label for="appt-billing">Forma de Pagamento (Asaas) *</label>
+              <select id="appt-billing">
+                <option value="PIX">⚡ Pix (QR Code + Copia e Cola)</option>
+                <option value="UNDEFINED">🔗 Link de Pagamento (Paciente escolhe)</option>
+                <option value="BOLETO">🧾 Boleto Bancário</option>
+                <option value="CREDIT_CARD">💳 Cartão de Crédito (Link)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-appointment">Cancelar</button>
+          <button type="submit" id="btn-submit-appt" class="btn btn-primary">
+            Confirmar Agendamento
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: DETALHES DO PAGAMENTO / PIX -->
+  <div id="modal-payment" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-pay-title">
+    <div class="modal-backdrop" data-close="modal-payment"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-pay-title">💳 Cobrança Asaas</h2>
+        <button type="button" class="btn-close" data-close="modal-payment" aria-label="Fechar">✕</button>
+      </div>
+      <div id="modal-payment-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: NOVA ASSINATURA (PLANO) -->
+  <div id="modal-subscription" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-sub-title">
+    <div class="modal-backdrop" data-close="modal-subscription"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-sub-title">🌟 Adesão ao Plano da Clínica (Asaas)</h2>
+        <button type="button" class="btn-close" data-close="modal-subscription" aria-label="Fechar">✕</button>
+      </div>
+      <form id="form-subscription" class="modal-body">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="sub-cpf">CPF do Paciente *</label>
+            <input type="text" id="sub-cpf" placeholder="000.000.000-00" required />
+          </div>
+          <div class="form-field">
+            <label for="sub-phone">WhatsApp *</label>
+            <input type="tel" id="sub-phone" placeholder="(11) 99999-9999" required />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="sub-name">Nome Completo *</label>
+          <input type="text" id="sub-name" placeholder="Nome completo" required />
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="sub-plan">Plano *</label>
+            <select id="sub-plan" required></select>
+          </div>
+          <div class="form-field">
+            <label for="sub-billing">Forma de Cobrança Mensal *</label>
+            <select id="sub-billing">
+              <option value="UNDEFINED">🔗 Link (Pix / Boleto / Cartão)</option>
+              <option value="PIX">⚡ Pix Recorrente</option>
+              <option value="BOLETO">🧾 Boleto Mensal</option>
+              <option value="CREDIT_CARD">💳 Cartão de Crédito</option>
+            </select>
+          </div>
+        </div>
+        <div id="sub-result" class="check-result hidden"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-subscription">Fechar</button>
+          <button type="submit" class="btn btn-primary">Criar Assinatura no Asaas</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ÁREA DA RECEPÇÃO / ADMIN -->
+  <div id="modal-admin" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-admin-title">
+    <div class="modal-backdrop" data-close="modal-admin"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-admin-title">⚙️ Área da Recepção</h2>
+        <button type="button" class="btn-close" data-close="modal-admin" aria-label="Fechar">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="admin-login-box">
+          <p>Digite o PIN da recepção para acessar as configurações (padrão: <code>2027</code>):</p>
+          <div class="form-row">
+            <input type="password" id="admin-pin-input" placeholder="PIN" />
+            <button type="button" id="btn-admin-login" class="btn btn-primary">Entrar</button>
+          </div>
+        </div>
+
+        <div id="admin-panel-box" class="hidden">
+          <div class="sub-panel">
+            <h3>🔌 Modo de Integração Asaas</h3>
+            <p id="admin-env-status" class="muted"></p>
+            <div class="form-row">
+              <button type="button" id="btn-mode-demo" class="btn btn-outline">🧪 Usar Modo Demo Local</button>
+              <button type="button" id="btn-mode-netlify" class="btn btn-primary">🚀 Usar Asaas Real (Netlify)</button>
+            </div>
+          </div>
+
+          <div class="sub-panel">
+            <h3>🔔 Últimos Eventos Webhook (Asaas)</h3>
+            <button type="button" id="btn-refresh-webhooks" class="btn btn-secondary">🔄 Atualizar Eventos</button>
+            <div id="webhook-events-list" class="webhook-list"></div>
+          </div>
+
+          <div class="sub-panel">
+            <h3>🗂️ Dados Locais</h3>
+            <div class="form-row">
+              <button type="button" id="btn-export-json" class="btn btn-outline">⬇️ Exportar Agenda (JSON)</button>
+              <button type="button" id="btn-reset-demo" class="btn btn-danger-outline">🗑️ Resetar Dados de Exemplo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

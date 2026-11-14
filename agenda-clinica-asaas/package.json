@@ -1,0 +1,9 @@
+{
+  "name": "agenda-clinica-asaas",
+  "version": "1.0.0",
+  "description": "Agenda de Consultas para Clínica com verificação de planos e cobranças via Asaas",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

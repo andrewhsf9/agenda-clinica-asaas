@@ -1,0 +1,10 @@
+{
+  "name": "Agenda Clínica + Asaas",
+  "short_name": "Clínica Asaas",
+  "description": "Agenda de consultas com verificação de planos e cobranças Asaas (Pix, Boleto e Cartão).",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f8f7",
+  "theme_color": "#0f766e",
+  "icons": []
+}
