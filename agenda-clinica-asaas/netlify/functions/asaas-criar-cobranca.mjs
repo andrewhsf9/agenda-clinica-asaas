@@ -1,8 +1,8 @@
-import { asaasFetch, findOrCreateCustomer, jsonResponse } from "./_asaas.mjs";
+import { ASAAS_BILLING_RULES, asaasFetch, findOrCreateCustomer, jsonResponse } from "./_asaas.mjs";
 
 /**
- * Cria uma cobrança avulsa no Asaas (PIX, BOLETO, CREDIT_CARD ou UNDEFINED para link de pagamento).
- * Quando for PIX, também busca o QR Code e o código Copia e Cola.
+ * Cria uma cobrança avulsa no Asaas (PIX, BOLETO, CREDIT_CARD ou UNDEFINED para link de pagamento)
+ * já configurada com 5% de desconto até o vencimento, 2% de multa e 2% de juros após o vencimento.
  */
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") {
@@ -21,9 +21,10 @@ export async function handler(event) {
       email,
       value,
       dueDate,
-      billingType = "UNDEFINED",
+      billingType = "BOLETO",
       description = "Consulta Particular - Clínica",
       externalReference,
+      applyDiscountAndFine = true,
     } = body;
 
     if (!value || Number(value) <= 0) {
@@ -32,17 +33,20 @@ export async function handler(event) {
 
     const customer = await findOrCreateCustomer({ name, cpfCnpj, phone, email });
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const paymentPayload = {
+      customer: customer.id,
+      billingType,
+      value: Number(value),
+      dueDate: dueDate || today,
+      description,
+      externalReference: externalReference || undefined,
+      ...(applyDiscountAndFine ? ASAAS_BILLING_RULES : {}),
+    };
+
     const payment = await asaasFetch("/payments", {
       method: "POST",
-      body: JSON.stringify({
-        customer: customer.id,
-        billingType,
-        value: Number(value),
-        dueDate: dueDate || today,
-        description,
-        externalReference: externalReference || undefined,
-      }),
+      body: JSON.stringify(paymentPayload),
     });
 
     let pix = null;

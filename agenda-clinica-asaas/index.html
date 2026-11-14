@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agenda da Clínica — Integração Asaas</title>
+  <title>Agenda da Clínica — Planos, Carências &amp; Asaas</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#0f766e" />
   <link rel="stylesheet" href="styles.css" />
@@ -15,7 +15,7 @@
         <div class="brand-icon" aria-hidden="true">🏥</div>
         <div>
           <h1 id="clinic-name">Clínica Vida &amp; Saúde</h1>
-          <p id="clinic-subtitle" class="subtitle">Agenda de Consultas • Integração Asaas</p>
+          <p id="clinic-subtitle" class="subtitle">Agenda de Consultas • Gestão de Planos, Carências &amp; Asaas</p>
         </div>
       </div>
 
@@ -28,72 +28,157 @@
           <button type="button" id="btn-font-inc" class="btn-icon" title="Aumentar letra">A+</button>
         </div>
         <button type="button" id="btn-new-subscription" class="btn btn-secondary">
-          🌟 Novo Plano
+          🌟 Novo Plano / Contrato
         </button>
         <button type="button" id="btn-new-appointment" class="btn btn-primary">
-          + Nova Consulta
+          + Nova Consulta / Exame
         </button>
       </div>
     </div>
   </header>
 
   <main class="container">
-    <!-- Resumo rápido -->
-    <section class="stats-grid" aria-label="Resumo da agenda">
-      <div class="stat-card">
-        <span class="stat-label">Confirmadas</span>
-        <strong id="stat-confirmadas" class="stat-value stat-green">0</strong>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">Aguardando Pagto</span>
-        <strong id="stat-pendentes" class="stat-value stat-amber">0</strong>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">Recusadas (Plano)</span>
-        <strong id="stat-recusadas" class="stat-value stat-red">0</strong>
-      </div>
-      <div class="stat-card">
-        <span class="stat-label">Faturamento Avulso</span>
-        <strong id="stat-total" class="stat-value stat-teal">R$ 0,00</strong>
-      </div>
-    </section>
+    <!-- Abas principais -->
+    <nav class="main-tabs" aria-label="Navegação principal">
+      <button type="button" id="tab-btn-agenda" class="main-tab active">
+        📅 Agenda de Consultas &amp; Exames
+      </button>
+      <button type="button" id="tab-btn-planos" class="main-tab">
+        👨‍👩‍👧‍👦 Banco de Planos, Dependentes &amp; Carências <span id="badge-count-planos" class="tab-count">0</span>
+      </button>
+      <button type="button" id="tab-btn-master" class="main-tab">
+        🔐 Carências &amp; Quarentena (Master)
+      </button>
+    </nav>
 
-    <!-- Filtros -->
-    <section class="filters-bar" aria-label="Filtros da agenda">
-      <div class="filter-group" id="status-filters">
-        <button type="button" class="filter-chip active" data-filter="ALL">Tudo</button>
-        <button type="button" class="filter-chip" data-filter="CONFIRMED">✅ Confirmadas</button>
-        <button type="button" class="filter-chip" data-filter="PENDING">⏳ Aguardando Pagto</button>
-        <button type="button" class="filter-chip" data-filter="REFUSED">🚫 Recusadas (Plano)</button>
-      </div>
-      <div class="filter-right">
-        <select id="filter-professional" class="select-input" aria-label="Filtrar por profissional">
-          <option value="ALL">Todos os profissionais</option>
-        </select>
-        <button type="button" id="btn-print" class="btn btn-outline">🖨️ Imprimir</button>
-      </div>
-    </section>
+    <!-- ABA 1: AGENDA DE CONSULTAS -->
+    <div id="view-agenda">
+      <section class="stats-grid" aria-label="Resumo da agenda">
+        <div class="stat-card">
+          <span class="stat-label">Confirmadas</span>
+          <strong id="stat-confirmadas" class="stat-value stat-green">0</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Aguardando Pagto</span>
+          <strong id="stat-pendentes" class="stat-value stat-amber">0</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Recusadas (Plano/Carência)</span>
+          <strong id="stat-recusadas" class="stat-value stat-red">0</strong>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Faturamento Avulso</span>
+          <strong id="stat-total" class="stat-value stat-teal">R$ 0,00</strong>
+        </div>
+      </section>
 
-    <!-- Lista de consultas -->
-    <section id="agenda-list" class="agenda-list" aria-live="polite"></section>
+      <section class="filters-bar" aria-label="Filtros da agenda">
+        <div class="filter-group" id="status-filters">
+          <button type="button" class="filter-chip active" data-filter="ALL">Tudo</button>
+          <button type="button" class="filter-chip" data-filter="CONFIRMED">✅ Confirmadas</button>
+          <button type="button" class="filter-chip" data-filter="PENDING">⏳ Aguardando Pagto</button>
+          <button type="button" class="filter-chip" data-filter="REFUSED">🚫 Recusadas</button>
+        </div>
+        <div class="filter-right">
+          <select id="filter-professional" class="select-input" aria-label="Filtrar por profissional">
+            <option value="ALL">Todos os profissionais</option>
+          </select>
+          <button type="button" id="btn-print" class="btn btn-outline">🖨️ Imprimir</button>
+        </div>
+      </section>
+
+      <section id="agenda-list" class="agenda-list" aria-live="polite"></section>
+    </div>
+
+    <!-- ABA 2: BANCO DE DADOS DE PLANOS (TITULARES, DEPENDENTES, REAJUSTE E HISTÓRICO) -->
+    <div id="view-planos" class="hidden">
+      <section class="sub-panel" style="margin-bottom: 1.25rem; background: #fff;">
+        <div class="filters-bar" style="margin-bottom: 0;">
+          <div>
+            <h2 style="margin: 0; font-size: 1.15rem;">👨‍👩‍👧‍👦 Contratos Ativos, Dependentes, Carências e Reajuste Anual (+5%)</h2>
+            <p class="muted">
+              • <strong>Reajuste Anual Automático:</strong> +5% no Asaas a cada 1 ano de contrato.<br>
+              • <strong>Carências Gerais:</strong> Exames Lab (40d) • Eletro/Preventivo (30d) • Raio-X (30d) • Consultas: 1-2 vidas (30d) | 3+ vidas (Zero carência).
+            </p>
+          </div>
+          <div class="filter-right">
+            <input type="text" id="search-planos" placeholder="🔍 Buscar titular ou dependente (nome/CPF)..." style="min-width: 260px;" />
+            <button type="button" id="btn-refresh-planos" class="btn btn-outline">🔄 Sincronizar Asaas</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="planos-list" class="agenda-list" aria-live="polite"></section>
+    </div>
+
+    <!-- ABA 3: GESTÃO MASTER DE CARÊNCIAS GLOBAIS E QUARENTENA DE 6 MESES -->
+    <div id="view-master" class="hidden">
+      <section class="sub-panel" style="background: #fff; margin-bottom: 1.25rem;">
+        <h2>🔐 Painel Master — Carências Gerais e Bloqueio de 6 Meses</h2>
+        <p class="muted">
+          Altere as regras de carência de todos os planos ou libere CPFs que saíram/cancelaram o plano nos últimos 6 meses.
+          *(Senha Master padrão: <code>9999</code>)*
+        </p>
+
+        <form id="form-global-carencias" class="sub-panel">
+          <h3>⏱️ Regras Gerais de Carência (Todos os Planos)</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="cfg-car-lab">Exames Laboratoriais (dias)</label>
+              <input type="number" id="cfg-car-lab" min="0" value="40" required />
+            </div>
+            <div class="form-field">
+              <label for="cfg-car-eletro">Eletrocardiograma e Preventivo (dias)</label>
+              <input type="number" id="cfg-car-eletro" min="0" value="30" required />
+            </div>
+            <div class="form-field">
+              <label for="cfg-car-raiox">Raio-X (dias)</label>
+              <input type="number" id="cfg-car-raiox" min="0" value="30" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="cfg-car-cons12">Consultas — Planos 1 ou 2 vidas (dias)</label>
+              <input type="number" id="cfg-car-cons12" min="0" value="30" required />
+            </div>
+            <div class="form-field">
+              <label for="cfg-car-cons3">Consultas — Planos 3+ vidas (dias)</label>
+              <input type="number" id="cfg-car-cons3" min="0" value="0" required />
+            </div>
+            <div class="form-field">
+              <label for="cfg-car-quarentena">Bloqueio após Saída/Cancelamento (meses)</label>
+              <input type="number" id="cfg-car-quarentena" min="0" value="6" required />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">🔐 Salvar Regras Gerais (Senha Master)</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="sub-panel" style="background: #fff;">
+        <h3>🚫 Histórico de Saídas e Cancelamentos (Bloqueio de 6 Meses)</h3>
+        <p class="muted">Pessoas listadas abaixo saíram ou cancelaram o plano e não podem reativar nem entrar como dependente em outro plano até a data limite, exceto com liberação Master.</p>
+        <div id="quarentena-list" class="deps-table"></div>
+      </section>
+    </div>
   </main>
 
   <footer class="app-footer">
-    <p>Integração financeira segura via <strong>Asaas</strong> (Pix, Boleto, Cartão e Assinaturas).</p>
+    <p>Integração financeira segura via <strong>Asaas</strong> (Boleto com 5% desc. até o vencimento / 2% multa e juros • Reajuste anual +5%).</p>
     <button type="button" id="btn-open-admin" class="btn-link">⚙️ Área da Recepção</button>
   </footer>
 
-  <!-- MODAL: NOVA CONSULTA -->
+  <!-- MODAL: NOVA CONSULTA / EXAME -->
   <div id="modal-appointment" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-appt-title">
     <div class="modal-backdrop" data-close="modal-appointment"></div>
     <div class="modal-card">
       <div class="modal-header">
-        <h2 id="modal-appt-title">📅 Nova Consulta</h2>
+        <h2 id="modal-appt-title">📅 Nova Consulta / Procedimento</h2>
         <button type="button" class="btn-close" data-close="modal-appointment" aria-label="Fechar">✕</button>
       </div>
 
       <form id="form-appointment" class="modal-body">
-        <!-- CPFs de teste no Modo Demo -->
         <div id="demo-cpf-hints" class="demo-hints">
           <span>🧪 <strong>Teste rápido (Modo Demo):</strong></span>
           <button type="button" class="hint-btn" data-cpf="111.111.111-11">111... Plano em Dia</button>
@@ -103,7 +188,7 @@
 
         <div class="form-row">
           <div class="form-field">
-            <label for="appt-cpf">CPF do Paciente *</label>
+            <label for="appt-cpf">CPF do Paciente (Titular ou Dependente) *</label>
             <input type="text" id="appt-cpf" placeholder="000.000.000-00" maxlength="18" required />
           </div>
           <div class="form-field">
@@ -119,9 +204,16 @@
 
         <div class="form-row">
           <div class="form-field">
+            <label for="appt-procedure">Procedimento (Regra de Carência) *</label>
+            <select id="appt-procedure" required></select>
+          </div>
+          <div class="form-field">
             <label for="appt-professional">Profissional / Especialidade *</label>
             <select id="appt-professional" required></select>
           </div>
+        </div>
+
+        <div class="form-row">
           <div class="form-field">
             <label for="appt-date">Data *</label>
             <input type="date" id="appt-date" required />
@@ -139,14 +231,14 @@
               <input type="radio" name="appt-type" value="PLANO" checked />
               <div>
                 <strong>🪪 Plano da Clínica</strong>
-                <small>Verifica automaticamente no Asaas se está em dia</small>
+                <small>Verifica pagamento no Asaas + carência do procedimento</small>
               </div>
             </label>
             <label class="radio-card">
               <input type="radio" name="appt-type" value="PARTICULAR" />
               <div>
                 <strong>💳 Particular (Avulso)</strong>
-                <small>Gera Pix, Boleto, Cartão ou Link de Pagamento</small>
+                <small>Boleto (5% desc. até venc.), Pix ou Cartão</small>
               </div>
             </label>
           </div>
@@ -155,7 +247,7 @@
         <!-- Bloco PLANO -->
         <div id="section-plano" class="sub-panel">
           <button type="button" id="btn-verify-plan" class="btn btn-teal-outline btn-block">
-            🔍 Verificar Situação do Plano no Asaas
+            🔍 Verificar Pagamento no Asaas + Carência
           </button>
           <div id="plan-check-result" class="check-result hidden"></div>
         </div>
@@ -164,15 +256,15 @@
         <div id="section-particular" class="sub-panel hidden">
           <div class="form-row">
             <div class="form-field">
-              <label for="appt-value">Valor da Consulta (R$) *</label>
+              <label for="appt-value">Valor (R$) *</label>
               <input type="number" id="appt-value" step="0.01" min="1" />
             </div>
             <div class="form-field">
               <label for="appt-billing">Forma de Pagamento (Asaas) *</label>
               <select id="appt-billing">
+                <option value="BOLETO">🧾 Boleto Bancário (5% desc. até venc. / 2% multa+juros)</option>
                 <option value="PIX">⚡ Pix (QR Code + Copia e Cola)</option>
                 <option value="UNDEFINED">🔗 Link de Pagamento (Paciente escolhe)</option>
-                <option value="BOLETO">🧾 Boleto Bancário</option>
                 <option value="CREDIT_CARD">💳 Cartão de Crédito (Link)</option>
               </select>
             </div>
@@ -189,70 +281,246 @@
     </div>
   </div>
 
-  <!-- MODAL: DETALHES DO PAGAMENTO / PIX -->
+  <!-- MODAL: DETALHES DO PAGAMENTO / BOLETO / PIX -->
   <div id="modal-payment" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-pay-title">
     <div class="modal-backdrop" data-close="modal-payment"></div>
     <div class="modal-card">
       <div class="modal-header">
-        <h2 id="modal-pay-title">💳 Cobrança Asaas</h2>
+        <h2 id="modal-pay-title">💳 Cobrança / Boleto Asaas</h2>
         <button type="button" class="btn-close" data-close="modal-payment" aria-label="Fechar">✕</button>
       </div>
       <div id="modal-payment-body" class="modal-body"></div>
     </div>
   </div>
 
-  <!-- MODAL: NOVA ASSINATURA (PLANO) -->
+  <!-- MODAL: NOVO PLANO / ASSINATURA -->
   <div id="modal-subscription" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-sub-title">
     <div class="modal-backdrop" data-close="modal-subscription"></div>
-    <div class="modal-card">
+    <div class="modal-card modal-card-lg">
       <div class="modal-header">
-        <h2 id="modal-sub-title">🌟 Adesão ao Plano da Clínica (Asaas)</h2>
+        <h2 id="modal-sub-title">🌟 Novo Contrato de Plano (Titular + Dependentes)</h2>
         <button type="button" class="btn-close" data-close="modal-subscription" aria-label="Fechar">✕</button>
       </div>
       <form id="form-subscription" class="modal-body">
-        <div class="form-row">
-          <div class="form-field">
-            <label for="sub-cpf">CPF do Paciente *</label>
-            <input type="text" id="sub-cpf" placeholder="000.000.000-00" required />
+        <div class="sub-panel">
+          <h3>👤 1. Responsável Financeiro (Titular do Plano)</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="sub-cpf">CPF do Titular *</label>
+              <input type="text" id="sub-cpf" placeholder="000.000.000-00" required />
+            </div>
+            <div class="form-field">
+              <label for="sub-phone">WhatsApp (para envio dos boletos) *</label>
+              <input type="tel" id="sub-phone" placeholder="(11) 99999-9999" required />
+            </div>
           </div>
           <div class="form-field">
-            <label for="sub-phone">WhatsApp *</label>
-            <input type="tel" id="sub-phone" placeholder="(11) 99999-9999" required />
+            <label for="sub-name">Nome Completo do Titular *</label>
+            <input type="text" id="sub-name" placeholder="Nome completo do responsável" required />
           </div>
         </div>
-        <div class="form-field">
-          <label for="sub-name">Nome Completo *</label>
-          <input type="text" id="sub-name" placeholder="Nome completo" required />
+
+        <div class="sub-panel">
+          <h3>🪪 2. Escolha do Plano, Datas e Valores</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="sub-plan">Plano (1 a 10 pessoas ou Bronze / Prata / Ouro) *</label>
+              <select id="sub-plan" required></select>
+            </div>
+            <div class="form-field">
+              <label for="sub-custom-value">Valor da Mensalidade (R$) *</label>
+              <input type="number" id="sub-custom-value" step="0.01" min="1" required />
+              <small id="sub-value-hint" class="muted">Preenchido pela tabela (ou digite o valor para Bronze/Prata/Ouro).</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="sub-start-date">Data de Adesão (Início Carência / Aniversário Anual) *</label>
+              <input type="date" id="sub-start-date" required />
+            </div>
+            <div class="form-field">
+              <label for="sub-due-date">1º Vencimento no Asaas (Mês Seguinte) *</label>
+              <input type="date" id="sub-due-date" required />
+            </div>
+            <div class="form-field">
+              <label for="sub-billing">Forma de Cobrança Mensal *</label>
+              <select id="sub-billing">
+                <option value="BOLETO">🧾 Boleto Bancário (WhatsApp)</option>
+                <option value="UNDEFINED">🔗 Link (Boleto / Pix / Cartão)</option>
+                <option value="PIX">⚡ Pix Recorrente</option>
+                <option value="CREDIT_CARD">💳 Cartão de Crédito</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="sub-end-date">Validade / Fim do Contrato (Opcional)</label>
+            <input type="date" id="sub-end-date" />
+          </div>
+
+          <div id="sub-price-summary" class="price-summary-box"></div>
         </div>
+
+        <div class="sub-panel">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+            <div>
+              <h3>👨‍👩‍👧‍👦 3. Dependentes Incluídos na Adesão</h3>
+              <small class="muted">3+ vidas no contrato = Zero carência em consultas! (Adições posteriores custam +R$ 60/mês + R$ 10 adesão).</small>
+            </div>
+            <button type="button" id="btn-add-initial-dep" class="btn btn-teal-outline btn-sm">
+              + Adicionar Dependente
+            </button>
+          </div>
+          <div id="initial-deps-container" class="deps-form-list"></div>
+        </div>
+
+        <div id="sub-result" class="check-result hidden"></div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-subscription">Fechar</button>
+          <button type="submit" id="btn-submit-sub" class="btn btn-primary">
+            Criar Plano no Asaas e Salvar Contrato
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: ADICIONAR DEPENDENTE POSTERIOR -->
+  <div id="modal-add-dep" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-add-dep-title">
+    <div class="modal-backdrop" data-close="modal-add-dep"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-add-dep-title">➕ Incluir Novo(s) Dependente(s) no Plano</h2>
+        <button type="button" class="btn-close" data-close="modal-add-dep" aria-label="Fechar">✕</button>
+      </div>
+      <form id="form-add-dep" class="modal-body">
+        <input type="hidden" id="add-dep-sub-id" />
+        <div id="add-dep-contract-info" class="price-summary-box"></div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <strong>Dados do(s) Novo(s) Dependente(s):</strong>
+          <button type="button" id="btn-more-post-dep" class="btn btn-teal-outline btn-sm">+ Mais um dependente</button>
+        </div>
+        <div id="post-deps-container" class="deps-form-list"></div>
+
         <div class="form-row">
           <div class="form-field">
-            <label for="sub-plan">Plano *</label>
-            <select id="sub-plan" required></select>
+            <label for="add-dep-due-date">Vencimento do Boleto de Inclusão *</label>
+            <input type="date" id="add-dep-due-date" required />
           </div>
           <div class="form-field">
-            <label for="sub-billing">Forma de Cobrança Mensal *</label>
-            <select id="sub-billing">
-              <option value="UNDEFINED">🔗 Link (Pix / Boleto / Cartão)</option>
-              <option value="PIX">⚡ Pix Recorrente</option>
-              <option value="BOLETO">🧾 Boleto Mensal</option>
-              <option value="CREDIT_CARD">💳 Cartão de Crédito</option>
+            <label for="add-dep-billing">Forma de Cobrança *</label>
+            <select id="add-dep-billing">
+              <option value="BOLETO">🧾 Boleto Bancário (5% desc. até venc.)</option>
+              <option value="PIX">⚡ Pix</option>
+              <option value="UNDEFINED">🔗 Link de Pagamento</option>
             </select>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-field">
-            <label for="sub-due-date">Vencimento da 1ª Fatura *</label>
-            <input type="date" id="sub-due-date" required />
-          </div>
-          <div class="form-field">
-            <label for="sub-end-date">Validade / Fim do Plano (Opcional)</label>
-            <input type="date" id="sub-end-date" />
+
+        <div id="add-dep-calc-box" class="check-result check-ok"></div>
+        <div id="add-dep-result" class="check-result hidden"></div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-add-dep">Fechar</button>
+          <button type="submit" id="btn-submit-add-dep" class="btn btn-primary">
+            Confirmar Inclusão e Atualizar Asaas
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: REMOVER DEPENDENTE -->
+  <div id="modal-remove-dep" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-rem-dep-title">
+    <div class="modal-backdrop" data-close="modal-remove-dep"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-rem-dep-title">🗑️ Retirar Dependente do Plano</h2>
+        <button type="button" class="btn-close" data-close="modal-remove-dep" aria-label="Fechar">✕</button>
+      </div>
+      <form id="form-remove-dep" class="modal-body">
+        <input type="hidden" id="rem-dep-sub-id" />
+        <input type="hidden" id="rem-dep-id" />
+        <p id="rem-dep-info"></p>
+        <div class="appt-reason" style="margin-top:0;">
+          ⚠️ Ao retirar o dependente, o CPF dele ficará registrado com <strong>carência de retorno de 6 meses</strong> (não poderá reativar nem entrar em outro plano sem liberação Master).
+        </div>
+
+        <div class="sub-panel">
+          <label class="radio-card" style="border-color: var(--primary);">
+            <input type="checkbox" id="rem-dep-decrease-check" checked />
+            <div>
+              <strong>Diminuir valor da mensalidade no Asaas automaticamente</strong>
+              <small>Atualiza a assinatura e as cobranças pendentes no Asaas com o novo valor abaixo.</small>
+            </div>
+          </label>
+
+          <div class="form-field" id="rem-dep-new-val-box">
+            <label for="rem-dep-new-value">Novo Valor da Mensalidade no Asaas (R$) *</label>
+            <input type="number" id="rem-dep-new-value" step="0.01" min="1" required />
+            <small id="rem-dep-hint" class="muted"></small>
           </div>
         </div>
-        <div id="sub-result" class="check-result hidden"></div>
+
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline" data-close="modal-subscription">Fechar</button>
-          <button type="submit" class="btn btn-primary">Criar Assinatura no Asaas</button>
+          <button type="button" class="btn btn-outline" data-close="modal-remove-dep">Cancelar</button>
+          <button type="submit" id="btn-submit-rem-dep" class="btn btn-danger-outline">
+            Confirmar Retirada e Atualizar Asaas
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDITAR CARÊNCIAS DE UM CONTRATO ESPECÍFICO (MASTER) -->
+  <div id="modal-contract-carencia" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-cc-title">
+    <div class="modal-backdrop" data-close="modal-contract-carencia"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modal-cc-title">🔐 Carências Específicas deste Contrato (Acesso Master)</h2>
+        <button type="button" class="btn-close" data-close="modal-contract-carencia" aria-label="Fechar">✕</button>
+      </div>
+      <form id="form-contract-carencia" class="modal-body">
+        <input type="hidden" id="cc-sub-id" />
+        <p id="cc-contract-title" class="muted"></p>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="cc-lab">Exames Laboratoriais (dias)</label>
+            <input type="number" id="cc-lab" min="0" required />
+          </div>
+          <div class="form-field">
+            <label for="cc-eletro">Eletro e Preventivo (dias)</label>
+            <input type="number" id="cc-eletro" min="0" required />
+          </div>
+          <div class="form-field">
+            <label for="cc-raiox">Raio-X (dias)</label>
+            <input type="number" id="cc-raiox" min="0" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="cc-cons12">Consultas 1-2 vidas (dias)</label>
+            <input type="number" id="cc-cons12" min="0" required />
+          </div>
+          <div class="form-field">
+            <label for="cc-cons3">Consultas 3+ vidas (dias)</label>
+            <input type="number" id="cc-cons3" min="0" required />
+          </div>
+        </div>
+
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" id="btn-cc-zero-all" class="btn btn-teal-outline btn-sm">⚡ Zerar Todas as Carências deste Contrato</button>
+          <button type="button" id="btn-cc-restore-default" class="btn btn-outline btn-sm">↩️ Voltar ao Padrão Geral</button>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" data-close="modal-contract-carencia">Cancelar</button>
+          <button type="submit" class="btn btn-primary">🔐 Salvar com Senha Master</button>
         </div>
       </form>
     </div>
@@ -268,7 +536,7 @@
       </div>
       <div class="modal-body">
         <div id="admin-login-box">
-          <p>Digite o PIN da recepção para acessar as configurações (padrão: <code>2027</code>):</p>
+          <p>Digite o PIN da recepção (padrão: <code>2027</code>) ou Senha Master (<code>9999</code>):</p>
           <div class="form-row">
             <input type="password" id="admin-pin-input" placeholder="PIN" />
             <button type="button" id="btn-admin-login" class="btn btn-primary">Entrar</button>
@@ -294,7 +562,7 @@
           <div class="sub-panel">
             <h3>🗂️ Dados Locais</h3>
             <div class="form-row">
-              <button type="button" id="btn-export-json" class="btn btn-outline">⬇️ Exportar Agenda (JSON)</button>
+              <button type="button" id="btn-export-json" class="btn btn-outline">⬇️ Exportar Banco (JSON)</button>
               <button type="button" id="btn-reset-demo" class="btn btn-danger-outline">🗑️ Resetar Dados de Exemplo</button>
             </div>
           </div>

@@ -1,26 +1,24 @@
-import { asaasFetch, jsonResponse, sanitizeCpfCnpj } from "./_asaas.mjs";
-
-function formatDateBr(isoDate) {
-  if (!isoDate) return "-";
-  const [y, m, d] = String(isoDate).split("-");
-  return d && m && y ? `${d}/${m}/${y}` : isoDate;
-}
-
-function getTodayBrazilIso() {
-  // Fuso horário de Brasília (UTC-3)
-  const now = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  return now.toISOString().slice(0, 10);
-}
+import { getStore } from "@netlify/blobs";
+import {
+  DEFAULT_CARENCIAS,
+  asaasFetch,
+  evaluateCarencia,
+  formatDateBr,
+  getTodayBrazilIso,
+  jsonResponse,
+  sanitizeCpfCnpj,
+} from "./_asaas.mjs";
 
 const PAID_STATUSES = new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "DUNNING_RECEIVED"]);
 
 /**
- * Verifica no Asaas se o paciente possui plano (assinatura) ativo E com pagamento realmente confirmado.
- * Regras para aprovar (autorizado = true):
- * 1. Possuir assinatura ACTIVE (e dentro da data de validade endDate, se houver).
- * 2. Não possuir nenhuma cobrança OVERDUE nem cobrança PENDING com vencimento já passado (dueDate < hoje).
- * 3. Possuir pelo menos uma cobrança efetivamente PAGA (RECEIVED / CONFIRMED / RECEIVED_IN_CASH)
- *    e não ter cobrança PENDING vencendo hoje ou no passado sem pagamento.
+ * Verifica no Asaas se o paciente (Titular ou Dependente) está com pagamento em dia
+ * E se já cumpriu o prazo de carência para o procedimento selecionado:
+ * - Exames laboratoriais: 40 dias
+ * - Eletrocardiograma e preventivo: 30 dias
+ * - Raio-X: 30 dias
+ * - Consultas: 30 dias (planos de 1 ou 2 vidas) | Zero carência (planos a partir de 3 vidas)
+ * (Com Acesso Master, o responsável consegue liberar a carência ou editar por contrato/global).
  */
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") {
@@ -28,7 +26,11 @@ export async function handler(event) {
   }
 
   try {
-    const cpf = sanitizeCpfCnpj(event.queryStringParameters?.cpf);
+    const params = event.queryStringParameters || {};
+    const cpf = sanitizeCpfCnpj(params.cpf);
+    const procedimento = params.procedimento || "CONSULTA";
+    const masterOverride = params.masterOverride === "true" || params.masterOverride === "1";
+
     if (!cpf || (cpf.length !== 11 && cpf.length !== 14)) {
       return jsonResponse(400, {
         autorizado: false,
@@ -37,21 +39,63 @@ export async function handler(event) {
       });
     }
 
-    const customersRes = await asaasFetch(`/customers?cpfCnpj=${encodeURIComponent(cpf)}&limit=10`);
+    const today = getTodayBrazilIso();
+    let targetCpf = cpf;
+    let dependenteInfo = null;
+    let contratoLocal = null;
+    let dataAdesaoPessoa = null;
+    let regrasCarencia = { ...DEFAULT_CARENCIAS };
+
+    try {
+      const store = getStore("clinica-planos-db");
+      const [contratos, rawCarencia] = await Promise.all([
+        store.get("contratos", { type: "json" }).catch(() => []),
+        store.get("regras-carencia", { type: "json" }).catch(() => null),
+      ]);
+      if (rawCarencia) {
+        regrasCarencia = { ...DEFAULT_CARENCIAS, ...rawCarencia };
+      }
+
+      for (const c of contratos || []) {
+        if (c.status === "CANCELED") continue;
+        if (sanitizeCpfCnpj(c.titularCpf) === cpf) {
+          contratoLocal = c;
+          dataAdesaoPessoa = c.createdAt || today;
+          break;
+        }
+        const dep = (c.dependentes || []).find((d) => sanitizeCpfCnpj(d.cpf) === cpf);
+        if (dep) {
+          contratoLocal = c;
+          targetCpf = sanitizeCpfCnpj(c.titularCpf);
+          dataAdesaoPessoa = dep.dataInclusao || c.createdAt || today;
+          dependenteInfo = {
+            nome: dep.nome,
+            parentesco: dep.parentesco,
+            titularNome: c.titularNome,
+            titularCpf: c.titularCpf,
+          };
+          break;
+        }
+      }
+    } catch {
+      // Segue consultando direto no Asaas
+    }
+
+    const customersRes = await asaasFetch(`/customers?cpfCnpj=${encodeURIComponent(targetCpf)}&limit=10`);
     const customers = customersRes.data || [];
 
     if (customers.length === 0) {
       return jsonResponse(200, {
         autorizado: false,
         statusPlano: "NAO_ENCONTRADO",
-        motivo: "Paciente não encontrado no Asaas. Não possui plano ativo — agende como Particular ou faça a adesão ao plano.",
+        motivo: "Paciente (ou titular) não encontrado no Asaas. Não possui plano ativo — agende como Particular ou faça a adesão ao plano.",
       });
     }
 
-    const primaryCustomer = customers[0];
-    const today = getTodayBrazilIso();
+    const primaryCustomer = dependenteInfo
+      ? { id: customers[0].id, name: `${dependenteInfo.nome} (Dep. de ${dependenteInfo.titularNome})`, cpfCnpj: cpf }
+      : customers[0];
 
-    // Busca assinaturas e cobranças de todos os cadastros vinculados a este CPF no Asaas
     const allSubscriptions = [];
     const allPayments = [];
 
@@ -77,7 +121,7 @@ export async function handler(event) {
       return jsonResponse(200, {
         autorizado: false,
         statusPlano: "INADIMPLENTE",
-        motivo: `Agendamento recusado: paciente possui ${overduePayments.length} fatura(s) vencida(s) em aberto no Asaas (total R$ ${totalVencido.toFixed(2).replace(".", ",")}, vencimento em ${formatDateBr(maisAntiga.dueDate)}).`,
+        motivo: `Agendamento recusado: plano possui ${overduePayments.length} fatura(s) vencida(s) em aberto no Asaas (total R$ ${totalVencido.toFixed(2).replace(".", ",")}, vencimento em ${formatDateBr(maisAntiga.dueDate)}).`,
         customer: { id: primaryCustomer.id, name: primaryCustomer.name, cpfCnpj: primaryCustomer.cpfCnpj },
         faturasVencidas: overduePayments.map((p) => ({
           id: p.id,
@@ -113,38 +157,63 @@ export async function handler(event) {
       });
     }
 
-    // 3. Verifica as cobranças da assinatura ativa para confirmar se o cliente REALMENTE PAGOU
+    // 3. Verifica as cobranças da assinatura ativa:
+    // Como a 1ª mensalidade é paga no ato do contrato e as cobranças do Asaas vencem a partir do mês seguinte,
+    // bloqueia se houver fatura vencendo hoje ou no passado ainda PENDING (não paga).
     const subPayments = allPayments.filter((p) => p.subscription === activeSub.id);
     const paymentsToCheck = subPayments.length > 0 ? subPayments : allPayments;
 
     const paidPayments = paymentsToCheck.filter((p) => PAID_STATUSES.has(p.status));
     const pendingPayments = paymentsToCheck.filter((p) => p.status === "PENDING");
-
-    // Se nunca pagou nenhuma mensalidade (ex.: acabou de criar a assinatura e a 1ª fatura ainda está PENDING)
-    // OU se existe fatura PENDING vencendo hoje ainda não paga:
     const pendingDueToday = pendingPayments.find((p) => p.dueDate && p.dueDate <= today);
 
-    if (paidPayments.length === 0 || pendingDueToday) {
-      const pendente = pendingDueToday || pendingPayments[0];
-      const detalheFatura = pendente
-        ? `A fatura de R$ ${Number(pendente.value || activeSub.value).toFixed(2).replace(".", ",")} (vencimento ${formatDateBr(pendente.dueDate)}) ainda consta como PENDENTE (aguardando pagamento) no Asaas.`
-        : "Nenhuma mensalidade paga foi encontrada para esta assinatura no Asaas.";
-
+    if (pendingDueToday) {
       return jsonResponse(200, {
         autorizado: false,
         statusPlano: "AGUARDANDO_PAGAMENTO",
-        motivo: `Agendamento recusado: o plano foi cadastrado, mas ainda NÃO consta pagamento confirmado. ${detalheFatura}`,
+        motivo: `Agendamento recusado: a fatura de R$ ${Number(pendingDueToday.value || activeSub.value).toFixed(2).replace(".", ",")} com vencimento em ${formatDateBr(pendingDueToday.dueDate)} ainda consta como PENDENTE (aguardando pagamento) no Asaas.`,
         customer: { id: primaryCustomer.id, name: primaryCustomer.name, cpfCnpj: primaryCustomer.cpfCnpj },
-        linkRegularizacao: pendente?.invoiceUrl || null,
+        linkRegularizacao: pendingDueToday.invoiceUrl || null,
+      });
+    }
+
+    // 4. Verifica Carência do Procedimento (baseado na data de adesão e na quantidade de vidas do plano)
+    const totalVidas = contratoLocal ? 1 + (contratoLocal.dependentes?.length || 0) : 1;
+    const dataInicioCarencia =
+      dataAdesaoPessoa || contratoLocal?.createdAt || activeSub.dateCreated || paidPayments[paidPayments.length - 1]?.paymentDate || today;
+    const regrasDoContrato = contratoLocal?.carenciasPersonalizadas
+      ? { ...regrasCarencia, ...contratoLocal.carenciasPersonalizadas }
+      : regrasCarencia;
+
+    const carencia = evaluateCarencia({
+      procedimento,
+      dataAdesao: dataInicioCarencia,
+      totalVidas,
+      regras: regrasDoContrato,
+      today,
+    });
+
+    if (carencia.emCarencia && !masterOverride) {
+      return jsonResponse(200, {
+        autorizado: false,
+        statusPlano: "EM_CARENCIA",
+        bloqueioCarencia: true,
+        carencia,
+        motivo: `⏳ Em período de carência para ${carencia.nomeProcedimento} (plano com ${totalVidas} vida(s)): paciente aderiu em ${formatDateBr(carencia.dataAdesao)} (${carencia.diasCorridos} dia(s) cumpridos de ${carencia.diasExigidos} exigidos). Liberação em ${formatDateBr(carencia.liberaEm)} (faltam ${carencia.diasRestantes} dia(s)).`,
+        customer: { id: primaryCustomer.id, name: primaryCustomer.name, cpfCnpj: primaryCustomer.cpfCnpj },
       });
     }
 
     const ultimoPago = paidPayments[0];
+    const infoPagamento = ultimoPago
+      ? `Última fatura Asaas paga: R$ ${Number(ultimoPago.value).toFixed(2).replace(".", ",")}`
+      : `1ª mensalidade paga no ato do contrato`;
 
     return jsonResponse(200, {
       autorizado: true,
       statusPlano: "EM_DIA",
-      motivo: `Plano em dia! Pagamento confirmado no Asaas (última fatura paga: R$ ${Number(ultimoPago.value).toFixed(2).replace(".", ",")} • próximo vencimento: ${formatDateBr(activeSub.nextDueDate)}${activeSub.endDate ? ` • validade do plano até ${formatDateBr(activeSub.endDate)}` : ""}).`,
+      carencia,
+      motivo: `Plano em dia e carência cumprida para ${carencia.nomeProcedimento}! (${totalVidas} vida(s) • Adesão: ${formatDateBr(carencia.dataAdesao)} • ${infoPagamento} • Próx. vencimento Asaas: ${formatDateBr(activeSub.nextDueDate)})${masterOverride && carencia.emCarencia ? " [Carência liberada com Acesso Master]" : ""}`,
       customer: { id: primaryCustomer.id, name: primaryCustomer.name, cpfCnpj: primaryCustomer.cpfCnpj },
       plano: {
         id: activeSub.id,
