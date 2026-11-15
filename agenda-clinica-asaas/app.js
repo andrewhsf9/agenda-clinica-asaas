@@ -1037,12 +1037,12 @@
 
         const badgeCar = (label, obj) =>
           obj.emCarencia
-            ? `<span class="badge badge-amber">⏳ ${label}: libera ${formatDateBr(obj.liberaEm)} (faltam ${obj.diasRestantes}d)</span>`
-            : `<span class="badge badge-green">✅ ${label}: Liberado</span>`;
+            ? `<span class="badge badge-amber">⏳ ${label}: ${formatDateBr(obj.liberaEm)} (${obj.diasRestantes}d)</span>`
+            : `<span class="badge badge-green">✓ ${label}</span>`;
 
         const depsHtml =
           deps.length === 0
-            ? `<p class="muted" style="margin-top:0.5rem;">Nenhum dependente cadastrado (1 vida — carência de 30d para consultas).</p>`
+            ? `<p class="muted">Nenhum dependente vinculado (1 vida).</p>`
             : `<div class="deps-table">
                 ${deps
                   .map((d) => {
@@ -1055,15 +1055,15 @@
                     return `
                   <div class="dep-item">
                     <div>
-                      <strong>👤 ${d.nome}</strong>
-                      <span class="muted"> • CPF: ${formatCpf(d.cpf) || "Não inf."}${d.dataNascimento ? ` • Nasc: ${formatDateBr(d.dataNascimento)}` : ""} • ${d.parentesco || "Dependente"} • Entrada: ${formatDateBr(d.dataInclusao || c.createdAt)}</span>
-                      <span class="badge badge-teal" style="margin-left:0.3rem;">
-                        ${d.tipoInclusao === "POSTERIOR" ? "Incluído depois (+R$ 60)" : "Adesão inicial"}
+                      <strong>${d.nome}</strong>
+                      <span class="muted"> • ${formatCpf(d.cpf) || "Sem CPF"}${d.dataNascimento ? ` • Nasc: ${formatDateBr(d.dataNascimento)}` : ""} • ${d.parentesco || "Dependente"}</span>
+                      <span class="badge badge-neutral" style="margin-left:0.35rem;">
+                        ${d.tipoInclusao === "POSTERIOR" ? "Posterior (+R$ 60)" : "Adesão"}
                       </span>
                       ${
                         carDepCons.emCarencia
-                          ? `<span class="badge badge-amber">⏳ Consulta libera ${formatDateBr(carDepCons.liberaEm)}</span>`
-                          : `<span class="badge badge-green">✅ Consulta Liberada</span>`
+                          ? `<span class="badge badge-amber">⏳ Consulta ${formatDateBr(carDepCons.liberaEm)}</span>`
+                          : `<span class="badge badge-green">✓ Consulta</span>`
                       }
                     </div>
                     ${
@@ -1072,7 +1072,7 @@
                             data-plan-action="remove-dep"
                             data-sub-id="${c.subscriptionId}"
                             data-dep-id="${d.id}">
-                            🗑️ Retirar
+                            Retirar
                           </button>`
                         : ""
                     }
@@ -1087,76 +1087,93 @@
           .join("");
 
         return `
-          <article class="appt-card ${isCanceled ? "status-REFUSED" : "status-CONFIRMED"}">
-            <div class="appt-main">
-              <div class="appt-top">
-                <span class="badge ${isCanceled ? "badge-red" : "badge-green"}">
-                  ${isCanceled ? "🚫 Contrato Cancelado (Em Quarentena 6m)" : "🪪 Contrato Ativo"}
-                </span>
-                ${c.matricula ? `<span class="badge badge-teal" title="Matrícula do Contrato">🏷️ ${c.matricula}</span>` : ""}
-                <span class="badge badge-teal">${c.planName}</span>
-                <span class="badge badge-amber">💰 Mensalidade Asaas: ${formatMoney(c.valorMensal)}/mês</span>
-                <span class="muted">• <strong>${totalVidas} vida(s)</strong> (${totalVidas >= 3 ? "Zero carência p/ consultas" : "1-2 vidas: 30d carência p/ consultas"})</span>
-                ${c.carenciasPersonalizadas ? `<span class="badge badge-teal">🔐 Carência Personalizada (Master)</span>` : ""}
+          <article class="plan-card ${isCanceled ? "status-CANCELED" : ""}">
+            <div class="plan-card-header">
+              <div class="plan-card-title-group">
+                <div class="plan-card-badges">
+                  <span class="badge ${isCanceled ? "badge-red" : "badge-green"}">
+                    ${isCanceled ? "Cancelado (Quarentena 6m)" : "Ativo"}
+                  </span>
+                  ${c.matricula ? `<span class="badge badge-teal">🏷️ ${c.matricula}</span>` : ""}
+                  <span class="badge badge-neutral">${c.planName}</span>
+                  ${c.carenciasPersonalizadas ? `<span class="badge badge-teal">🔐 Carência Master</span>` : ""}
+                </div>
+                <h3 class="plan-card-name">${c.titularNome}</h3>
               </div>
 
-              <h3 class="appt-patient">${c.titularNome} <small class="muted">(CPF: ${formatCpf(c.titularCpf)}${c.titularDataNascimento ? ` • Nasc: ${formatDateBr(c.titularDataNascimento)}` : ""} • WhatsApp: ${c.titularPhone || "-"})</small></h3>
-
-              ${
-                c.titularEndereco && (c.titularEndereco.logradouro || c.titularEndereco.cep)
-                  ? `<p class="appt-meta" style="margin-bottom:0.2rem;">📍 <strong>Endereço:</strong> ${formatEnderecoResumo(c.titularEndereco)}</p>`
-                  : ""
-              }
-
-              <p class="appt-meta">
-                📜 <strong>Adesão:</strong> ${formatDateBr(c.createdAt)} •
-                📅 <strong>Vencimento:</strong> ${formatDateBr(c.nextDueDate)} •
-                📈 <strong>Próx. Reajuste Anual (+5%):</strong> ${formatDateBr(c.proximoReajusteEm || addYearsIso(c.createdAt, 1))}
-                ${c.endDate ? ` • <strong>Validade:</strong> ${formatDateBr(c.endDate)}` : ""}
-              </p>
-
-              <div style="display:flex; flex-wrap:wrap; gap:0.35rem; margin-top:0.5rem;">
-                ${badgeCar("Consultas", carCons)}
-                ${badgeCar("Eletro/Prev (30d)", carEletro)}
-                ${badgeCar("Raio-X (30d)", carRaioX)}
-                ${badgeCar("Exames Lab (40d)", carLab)}
+              <div class="plan-card-price">
+                <span class="plan-price-value">${formatMoney(c.valorMensal)}<small style="font-weight:500; font-size:0.75rem; color:var(--muted);">/mês</small></span>
+                <span class="muted" style="font-size:0.78rem;">${totalVidas} vida(s) • ${totalVidas >= 3 ? "Consulta sem carência" : "Consulta 30d"}</span>
               </div>
+            </div>
 
-              ${depsHtml}
-
-              ${
-                historicoHtml
-                  ? `<details style="margin-top:0.65rem;">
-                       <summary style="cursor:pointer; font-weight:600; font-size:0.86rem; color:var(--primary-dark);">
-                         📜 Ver Histórico do Contrato (${(c.historicoEventos || []).length} registro(s))
-                       </summary>
-                       <div class="webhook-list" style="margin-top:0.4rem;">${historicoHtml}</div>
-                     </details>`
-                  : ""
-              }
+            <div class="plan-info-grid">
+              <div class="plan-info-item"><strong>CPF:</strong> ${formatCpf(c.titularCpf)}</div>
+              <div class="plan-info-item"><strong>Nascimento:</strong> ${c.titularDataNascimento ? formatDateBr(c.titularDataNascimento) : "-"}</div>
+              <div class="plan-info-item"><strong>WhatsApp:</strong> ${c.titularPhone || "-"}</div>
+              <div class="plan-info-item"><strong>Adesão:</strong> ${formatDateBr(c.createdAt)}</div>
+              <div class="plan-info-item"><strong>Próx. Vencimento:</strong> ${formatDateBr(c.nextDueDate)}</div>
+              <div class="plan-info-item"><strong>Reajuste (+5%):</strong> ${formatDateBr(c.proximoReajusteEm || addYearsIso(c.createdAt, 1))}</div>
             </div>
 
             ${
+              c.titularEndereco && (c.titularEndereco.logradouro || c.titularEndereco.cep)
+                ? `<div class="muted" style="font-size:0.82rem;">📍 <strong>Endereço:</strong> ${formatEnderecoResumo(c.titularEndereco)}</div>`
+                : ""
+            }
+
+            <div class="plan-carencias-bar">
+              <span class="plan-carencias-label">Carências:</span>
+              ${badgeCar("Consultas", carCons)}
+              ${badgeCar("Eletro/Prev", carEletro)}
+              ${badgeCar("Raio-X", carRaioX)}
+              ${badgeCar("Exames Lab", carLab)}
+            </div>
+
+            <div class="plan-deps-section">
+              <span class="plan-section-title">Dependentes (${deps.length})</span>
+              ${depsHtml}
+            </div>
+
+            ${
+              historicoHtml
+                ? `<details>
+                     <summary style="cursor:pointer; font-weight:600; font-size:0.82rem; color:var(--muted);">
+                       📜 Histórico do contrato (${(c.historicoEventos || []).length})
+                     </summary>
+                     <div class="webhook-list" style="margin-top:0.4rem;">${historicoHtml}</div>
+                   </details>`
+                : ""
+            }
+
+            ${
               !isCanceled
-                ? `<div class="appt-actions" style="align-self: flex-start; flex-direction: column; align-items: stretch;">
-                    <button type="button" class="btn btn-primary btn-sm" data-plan-action="add-dep" data-sub-id="${c.subscriptionId}">
-                      ➕ Incluir Dependente (+R$ 60 + R$ 10)
-                    </button>
-                    <button type="button" class="btn btn-teal-outline btn-sm" data-plan-action="edit-carencia" data-sub-id="${c.subscriptionId}">
-                      🔐 Carências deste Contrato (Master)
-                    </button>
-                    <button type="button" class="btn btn-outline btn-sm" data-plan-action="annual-adjust" data-sub-id="${c.subscriptionId}">
-                      📈 Aplicar Reajuste Anual (+5%)
-                    </button>
-                    <button type="button" class="btn btn-outline btn-sm" data-plan-action="edit-val" data-sub-id="${c.subscriptionId}">
-                      ✏️ Alterar Mensalidade Asaas
-                    </button>
-                    <a class="btn btn-outline btn-sm" href="${whatsUrl}" target="_blank" rel="noopener">
-                      📲 Enviar Boleto no WhatsApp
-                    </a>
-                    <button type="button" class="btn btn-danger-outline btn-sm" data-plan-action="cancel-contract" data-sub-id="${c.subscriptionId}">
-                      🚫 Cancelar Plano (Quarentena 6m)
-                    </button>
+                ? `<div class="plan-actions-bar">
+                    <div class="plan-actions-primary">
+                      <button type="button" class="btn btn-primary btn-sm" data-plan-action="add-dep" data-sub-id="${c.subscriptionId}">
+                        + Incluir Dependente
+                      </button>
+                      <a class="btn btn-outline btn-sm" href="${whatsUrl}" target="_blank" rel="noopener">
+                        📲 Enviar Boleto
+                      </a>
+                    </div>
+                    <details class="actions-dropdown">
+                      <summary class="btn btn-outline btn-sm">⚙️ Gerenciar Contrato ▾</summary>
+                      <div class="actions-dropdown-menu">
+                        <button type="button" class="btn" data-plan-action="edit-carencia" data-sub-id="${c.subscriptionId}">
+                          🔐 Carências do Contrato (Master)
+                        </button>
+                        <button type="button" class="btn" data-plan-action="annual-adjust" data-sub-id="${c.subscriptionId}">
+                          📈 Aplicar Reajuste Anual (+5%)
+                        </button>
+                        <button type="button" class="btn" data-plan-action="edit-val" data-sub-id="${c.subscriptionId}">
+                          ✏️ Alterar Mensalidade Asaas
+                        </button>
+                        <button type="button" class="btn danger-item" data-plan-action="cancel-contract" data-sub-id="${c.subscriptionId}">
+                          🚫 Cancelar Plano (Quarentena 6m)
+                        </button>
+                      </div>
+                    </details>
                   </div>`
                 : ""
             }

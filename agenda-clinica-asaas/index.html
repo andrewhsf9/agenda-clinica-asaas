@@ -41,13 +41,13 @@
     <!-- Abas principais -->
     <nav class="main-tabs" aria-label="Navegação principal">
       <button type="button" id="tab-btn-agenda" class="main-tab active">
-        📅 Agenda de Consultas &amp; Exames
+        📅 Agenda
       </button>
       <button type="button" id="tab-btn-planos" class="main-tab">
-        👨‍👩‍👧‍👦 Banco de Planos, Dependentes &amp; Carências <span id="badge-count-planos" class="tab-count">0</span>
+        🪪 Planos &amp; Dependentes <span id="badge-count-planos" class="tab-count">0</span>
       </button>
       <button type="button" id="tab-btn-master" class="main-tab">
-        🔐 Carências &amp; Quarentena (Master)
+        🔐 Painel Master
       </button>
     </nav>
 
@@ -92,19 +92,16 @@
 
     <!-- ABA 2: BANCO DE DADOS DE PLANOS (TITULARES, DEPENDENTES, REAJUSTE E HISTÓRICO) -->
     <div id="view-planos" class="hidden">
-      <section class="sub-panel" style="margin-bottom: 1.25rem; background: #fff;">
-        <div class="filters-bar" style="margin-bottom: 0;">
-          <div>
-            <h2 style="margin: 0; font-size: 1.15rem;">👨‍👩‍👧‍👦 Contratos Ativos, Dependentes, Carências e Reajuste Anual (+5%)</h2>
-            <p class="muted">
-              • <strong>Reajuste Anual Automático:</strong> +5% no Asaas a cada 1 ano de contrato.<br>
-              • <strong>Carências Gerais:</strong> Exames Lab (40d) • Eletro/Preventivo (30d) • Raio-X (30d) • Consultas: 1-2 vidas (30d) | 3+ vidas (Zero carência).
-            </p>
-          </div>
-          <div class="filter-right">
-            <input type="text" id="search-planos" placeholder="🔍 Buscar por Matrícula, Nome ou CPF..." style="min-width: 280px;" />
-            <button type="button" id="btn-refresh-planos" class="btn btn-outline">🔄 Sincronizar Asaas</button>
-          </div>
+      <section class="planos-toolbar">
+        <div>
+          <h2>Contratos &amp; Dependentes</h2>
+          <p class="muted">
+            Reajuste +5%/ano automático • Carências: Lab 40d, Eletro/Raio-X 30d, Consultas 30d (0d para 3+ vidas).
+          </p>
+        </div>
+        <div class="filter-right">
+          <input type="text" id="search-planos" placeholder="🔍 Buscar Matrícula, Nome ou CPF..." style="min-width: 260px;" />
+          <button type="button" id="btn-refresh-planos" class="btn btn-outline">🔄 Sincronizar</button>
         </div>
       </section>
 
